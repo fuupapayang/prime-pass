@@ -157,7 +157,7 @@ table.t td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-
 .slogan { padding: 30px 22px 6px; }
 .slogan .jp { font-family: var(--serif-jp); font-size: 19px; line-height: 1.9; color: var(--green); margin: 0 0 10px; }
 .slogan .en { font-family: var(--serif-en); font-size: 15px; font-style: italic; color: var(--gold); margin: 0; }
-.hscroll { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 22px 8px; margin: 0 -22px; scrollbar-width: none; }
+.hscroll { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-left: 22px; padding: 2px 22px 8px; margin: 0 -22px; scrollbar-width: none; }
 .hscroll::-webkit-scrollbar { display: none; }
 .hscroll > * { scroll-snap-align: start; flex: none; }
 .tile { width: 220px; text-decoration: none; color: inherit; display: block; }
