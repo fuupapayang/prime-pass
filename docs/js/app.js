@@ -222,7 +222,7 @@ function viewCraft(k) {
     <p class="eyebrow">${c.en}</p>
     <h1 class="display-jp">${c.jp}　<span style="font-size:14px;color:var(--muted)">${c.tag}</span></h1>
     <div style="margin:16px -22px 0">${A('video_' + k) ? `<video class="vid" src="${esc(A('video_' + k))}" poster="${esc(A('poster_' + k))}" controls playsinline preload="metadata"></video>` : `<div class="vid" ${bg('poster_' + k)}></div>`}</div>
-    <div class="person"><div class="ph" ${bg('person_' + k)}></div><div><div class="xs muted">${esc(c.who[0])}</div><div style="font-family:var(--serif-jp);font-size:18px;color:var(--green)">${esc(c.who[1])}</div><div class="xs" style="letter-spacing:.1em;color:var(--gold)">${esc(c.who[2])}</div></div></div>
+    <div class="person"><div class="ph" ${bg('poster_' + k)}></div><div><div class="xs muted">${esc(c.who[0])}</div><div style="font-family:var(--serif-jp);font-size:18px;color:var(--green)">${esc(c.who[1])}</div><div class="xs" style="letter-spacing:.1em;color:var(--gold)">${esc(c.who[2])}</div></div></div>
     <p style="font-family:var(--serif-jp);font-size:16px;line-height:1.9;color:var(--green)">${esc(c.copy)}</p>
     <p class="xs muted" style="margin-top:14px">※掲載のクラフトマンの映像は、2024年8月に撮影したものです。</p>
     <div style="margin-top:20px"><button class="btn ghost" data-go="#/home">ホームへ戻る</button></div>
