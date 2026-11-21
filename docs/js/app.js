@@ -626,11 +626,12 @@ async function boot() {
   else if (t) {
     app.innerHTML = '<div class="section center" style="padding-top:36vh"><p class="eyebrow">PRIME PASS</p><p class="h2">ご登録を確認しています…</p></div>';
     try {
-      const r = await call('redeemToken')({ token: t });
-      await signInWithCustomToken(auth, r.data.customToken);
+      const tmo = (p, label) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(label + 'が、20秒以内に終わりませんでした')), 20000))]);
+      const r = await tmo(call('redeemToken')({ token: t }), '番号の確認');
+      await tmo(signInWithCustomToken(auth, r.data.customToken), 'ログイン');
       history.replaceState(null, '', location.pathname + (isStandalone() ? '#/home' : '#/install')); // URLから一時番号を消す
     } catch (e) {
-      app.innerHTML = `<div class="section" style="padding-top:20vh"><p class="eyebrow">PRIME PASS</p><h1 class="display-jp">ご登録の確認が、できませんでした</h1><div class="banner err" style="margin-top:16px">${esc(e.message)}</div><a class="btn" href="form/">登録フォームへ戻る</a></div>`;
+      app.innerHTML = `<div class="section" style="padding-top:20vh"><p class="eyebrow">PRIME PASS</p><h1 class="display-jp">ご登録の確認が、できませんでした</h1><div class="banner err" style="margin-top:16px">${esc(e.message)}</div><p class="xs muted" style="margin:12px 0">使い捨ての番号は、一度使うと、使えなくなります。お手数ですが、登録フォームから、やり直してください。<br>（表示：${esc(isStandalone() ? 'ホーム画面アプリ' : 'ブラウザ')} / ${esc(navigator.userAgent.slice(0, 80))}）</p><a class="btn" href="form/">登録フォームへ戻る</a></div>`;
       return;
     }
   }
