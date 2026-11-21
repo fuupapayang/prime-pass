@@ -1,6 +1,6 @@
 // PRIME PASS 管理画面（6つの役割：ADEX / QLEA / ES CON本社 / 物件担当者1〜3）
 import {
-  auth, db, authReady, call, signInWithEmailAndPassword, signOut, onAuthStateChanged,
+  auth, db, authReady, call, signInWithEmailAndPassword, signOut, onAuthStateChanged, multiFactor, getMultiFactorResolver, TotpMultiFactorGenerator,
   collection, query, where, getDocs, doc, getDoc, $, $$, esc, fmtDate,
 } from './fb.js';
 import { ENV_LABEL, assetKey } from './config.js';
@@ -44,8 +44,79 @@ function viewLogin(msg = '') {
   $('#lf').addEventListener('submit', async (e) => {
     e.preventDefault(); $('#lb').disabled = true;
     try { await signInWithEmailAndPassword(auth, $('#em').value.trim(), $('#pw').value); }
-    catch (err) { $('#lerr').innerHTML = '<div class="banner err">IDまたはパスワードが、違います</div>'; $('#lb').disabled = false; }
+    catch (err) {
+      if (err.code === 'auth/multi-factor-auth-required') return view2FA(getMultiFactorResolver(auth, err));
+      $('#lerr').innerHTML = '<div class="banner err">IDまたはパスワードが、違います</div>'; $('#lb').disabled = false;
+    }
   });
+}
+
+/* ---------- 二段階認証（認証アプリの6桁コード） ---------- */
+const codeBoxes = (id) => `<div id="${id}" style="display:flex;gap:8px;justify-content:center;margin:18px 0">${[0, 1, 2, 3, 4, 5].map((i) => `<input class="input" inputmode="numeric" maxlength="1" autocomplete="${i === 0 ? 'one-time-code' : 'off'}" data-i="${i}" style="width:44px;height:52px;text-align:center;font-size:22px;padding:0">`).join('')}</div>`;
+function bindCodeBoxes(id, onFull) {
+  const boxes = $$(`#${id} input`);
+  const val = () => boxes.map((b) => b.value).join('');
+  boxes.forEach((b, i) => {
+    b.addEventListener('input', () => { b.value = b.value.replace(/\D/g, '').slice(-1); if (b.value && boxes[i + 1]) boxes[i + 1].focus(); if (val().length === 6) onFull(val()); });
+    b.addEventListener('keydown', (e) => { if (e.key === 'Backspace' && !b.value && boxes[i - 1]) boxes[i - 1].focus(); });
+    b.addEventListener('paste', (e) => { const t = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 6); if (t.length) { e.preventDefault(); boxes.forEach((x, k) => { x.value = t[k] || ''; }); if (t.length === 6) onFull(t); } });
+  });
+  boxes[0].focus();
+  return val;
+}
+function view2FA(resolver) {
+  root.innerHTML = `<div class="login-box">
+    <p class="eyebrow">Membership management</p><h1 class="display" style="font-size:30px">Account Security</h1>
+    <div style="color:var(--green);margin:18px 0 4px;text-align:center"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></div>
+    <h2 class="display-jp" style="text-align:center;font-size:18px">認証コードを入力してください</h2>
+    <p class="muted small center">認証アプリに表示された6桁のコードを入力します。</p>
+    ${codeBoxes('c2')}
+    <button class="btn" id="c2ok">確認する</button><div id="c2err" style="margin-top:12px"></div>
+    <p class="xs muted" style="margin-top:14px">端末をなくした場合は、ADEXへご連絡ください。アカウントを停止し、二段階認証を設定し直します。</p>
+    <button class="btn ghost" id="c2back" style="margin-top:12px">ログイン画面へ戻る</button></div>`;
+  let busy = false;
+  const go = async (code) => {
+    if (busy || code.length !== 6) return; busy = true; $('#c2err').innerHTML = '';
+    try {
+      const hint = resolver.hints.find((h) => h.factorId === 'totp') || resolver.hints[0];
+      await resolver.resolveSignIn(TotpMultiFactorGenerator.assertionForSignIn(hint.uid, code));
+    } catch (e) { $('#c2err').innerHTML = '<div class="banner err">コードが違います。認証アプリの、いまのコードを入力してください</div>'; $$('#c2 input').forEach((b) => { b.value = ''; }); $('#c2 input').focus(); busy = false; }
+  };
+  const val = bindCodeBoxes('c2', go);
+  $('#c2ok').addEventListener('click', () => go(val()));
+  $('#c2back').addEventListener('click', () => viewLogin());
+}
+async function viewEnroll(user) {
+  root.innerHTML = '<div class="section center muted" style="padding-top:30vh">二段階認証の設定を準備しています…</div>';
+  let secret;
+  try { secret = await TotpMultiFactorGenerator.generateSecret(await multiFactor(user).getSession()); }
+  catch (e) { await signOut(auth); return viewLogin(`<div class="banner err">設定を始められませんでした：${esc(e.message)}</div>`); }
+  const uri = secret.generateQrCodeUrl(user.email, 'PRIME PASS');
+  root.innerHTML = `<div class="login-box">
+    <p class="eyebrow">Membership management</p><h1 class="display" style="font-size:30px">Set up 2FA</h1>
+    <div class="banner warn" style="margin-top:14px">管理画面を使うには、二段階認証（認証アプリ）の設定が必要です。</div>
+    <ol class="steps" style="margin-top:6px"><li><div>スマホの認証アプリ（Google Authenticator など）を開き、下のQRコードを読み取ります。</div></li><li><div>アプリに表示された6桁のコードを入力します。</div></li></ol>
+    <div class="center" style="margin:14px 0"><div class="qrbox" id="eqr">読み込み中…</div><div class="xs muted" style="margin-top:8px">読み取れないときは、設定キーを入力：<br><span class="mono" style="word-break:break-all">${esc(secret.secretKey)}</span></div></div>
+    ${codeBoxes('c3')}
+    <button class="btn" id="c3ok">設定する</button><div id="c3err" style="margin-top:12px"></div>
+    <button class="btn ghost" id="c3no" style="margin-top:12px">あとで（ログアウト）</button></div>`;
+  const sc = document.createElement('script');
+  sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+  sc.onload = () => { const q = window.qrcode(0, 'M'); q.addData(uri); q.make(); $('#eqr').innerHTML = q.createSvgTag(5); };
+  sc.onerror = () => { $('#eqr').textContent = '（QRを表示できません。設定キーを入力してください）'; };
+  document.head.appendChild(sc);
+  let busy = false;
+  const go = async (code) => {
+    if (busy || code.length !== 6) return; busy = true; $('#c3err').innerHTML = '';
+    try {
+      await multiFactor(user).enroll(TotpMultiFactorGenerator.assertionForEnrollment(secret, code), '認証アプリ');
+      await signOut(auth);
+      viewLogin('<div class="banner ok">二段階認証を設定しました。もう一度、ID・パスワードと、認証アプリのコードで、ログインしてください。</div>');
+    } catch (e) { $('#c3err').innerHTML = '<div class="banner err">コードが違います。認証アプリの、いまのコードを入力してください</div>'; $$('#c3 input').forEach((x) => { x.value = ''; }); $('#c3 input').focus(); busy = false; }
+  };
+  const val = bindCodeBoxes('c3', go);
+  $('#c3ok').addEventListener('click', () => go(val()));
+  $('#c3no').addEventListener('click', () => signOut(auth));
 }
 
 /* ---------- データ取得（役割に応じて、許される範囲だけ） ---------- */
@@ -328,7 +399,7 @@ function tabMenu() {
   return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Management</h1>
   <div style="background:var(--green);color:#fff;padding:16px;display:flex;gap:14px;align-items:center;margin-bottom:18px"><span style="width:44px;height:44px;background:var(--gold);display:grid;place-items:center;font-family:var(--serif-jp);font-size:18px">${esc(initial(S.user.displayName || roleName()))}</span><div><div>${esc(S.user.displayName || roleName())}</div><div class="xs" style="opacity:.8">${esc(roleName())}</div></div></div>
   <div style="border-top:1px solid var(--line)">${menuItems().map(([k, l, d]) => `<a href="#" data-gotab="${k}" style="display:flex;justify-content:space-between;align-items:center;padding:16px 2px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit"><span><b style="font-weight:500">${l}</b><br><span class="xs muted">${d}</span></span><span class="muted">›</span></a>`).join('')}</div>
-  <p class="xs muted" style="margin-top:12px">${esc(roleSummary())}</p>
+  <div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);margin-top:8px"><span class="muted">二段階認証</span><span style="color:var(--ok)">有効（認証アプリ）</span></div><p class="xs muted" style="margin-top:12px">${esc(roleSummary())}</p>
   <button class="btn ghost" id="lo2" style="margin-top:18px;color:var(--danger);border-color:var(--danger)">ログアウト</button>`;
 }
 
@@ -377,7 +448,7 @@ function tabEvents() {
   ${rows.map((e) => `<tr><td>${fmtDate(e.ts)}</td><td class="mono">${esc(e.anonId)}</td><td>${pn(e.property)}</td><td>${esc(lab[e.type] || e.type)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">まだありません</td></tr>'}</tbody></table></div>`;
 }
 
-const AUDIT_JA = { sendNotice: ['通知を配信', '配信', '#2e7d5b'], sendNotice_denied: ['通知の配信を拒否', '権限', '#b3402f'], intake: ['登録フォームから登録', '登録', '#2f6db5'], property_create: ['物件を登録', '物件', '#997544'], property_update: ['物件を更新', '物件', '#997544'], property_archive: ['物件の掲載を停止', '物件', '#b3402f'], property_restore: ['物件の掲載を再開', '物件', '#2e7d5b'], staff_create: ['担当者を発行', '権限', '#b3402f'], staff_update: ['担当物件を変更', '権限', '#b3402f'], staff_disable: ['担当者を停止', '権限', '#b3402f'], staff_enable: ['担当者を再開', '権限', '#2e7d5b'], inquiry_status: ['問い合わせの状況を変更', '対応', '#2f6db5'], notice_submit: ['通知の承認を依頼', '承認', '#997544'], notice_approve: ['通知を承認', '承認', '#2e7d5b'], notice_reject: ['通知を差し戻し', '承認', '#b3402f'], notice_schedule: ['通知を予約', '配信', '#2f6db5'], notice_withdraw: ['通知を取り下げ', '承認', '#7d7b6e'], guide_send: ['ご案内を送信', '個別', '#2f6db5'], sendGuide_denied: ['ご案内の送信を拒否', '権限', '#b3402f'], property_image_set: ['物件の画像を登録', '物件', '#997544'], property_image_remove: ['物件の画像を外す', '物件', '#997544'], saveNotice_denied: ['通知の作成を拒否', '権限', '#b3402f'] };
+const AUDIT_JA = { sendNotice: ['通知を配信', '配信', '#2e7d5b'], sendNotice_denied: ['通知の配信を拒否', '権限', '#b3402f'], intake: ['登録フォームから登録', '登録', '#2f6db5'], property_create: ['物件を登録', '物件', '#997544'], property_update: ['物件を更新', '物件', '#997544'], property_archive: ['物件の掲載を停止', '物件', '#b3402f'], property_restore: ['物件の掲載を再開', '物件', '#2e7d5b'], staff_create: ['担当者を発行', '権限', '#b3402f'], staff_update: ['担当物件を変更', '権限', '#b3402f'], staff_disable: ['担当者を停止', '権限', '#b3402f'], staff_enable: ['担当者を再開', '権限', '#2e7d5b'], inquiry_status: ['問い合わせの状況を変更', '対応', '#2f6db5'], notice_submit: ['通知の承認を依頼', '承認', '#997544'], notice_approve: ['通知を承認', '承認', '#2e7d5b'], notice_reject: ['通知を差し戻し', '承認', '#b3402f'], notice_schedule: ['通知を予約', '配信', '#2f6db5'], notice_withdraw: ['通知を取り下げ', '承認', '#7d7b6e'], staff_mfa_reset: ['二段階認証をリセット', '権限', '#b3402f'], guide_send: ['ご案内を送信', '個別', '#2f6db5'], sendGuide_denied: ['ご案内の送信を拒否', '権限', '#b3402f'], property_image_set: ['物件の画像を登録', '物件', '#997544'], property_image_remove: ['物件の画像を外す', '物件', '#997544'], saveNotice_denied: ['通知の作成を拒否', '権限', '#b3402f'] };
 function tabAdmin() {
   const d = S.data;
   return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:12px">Audit Trail</h1>
@@ -462,7 +533,7 @@ function tabStaff() {
   const show = rows.filter((s) => (grp === 'staff' ? s.role === 'staff' : s.role !== 'staff'));
   return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:12px">Staff Accounts</h1>
   <div class="seg" id="sgTabs"><button data-v="staff" class="${grp === 'staff' ? 'on' : ''}">物件担当者 ${rows.filter((s) => s.role === 'staff').length}</button><button data-v="other" class="${grp === 'other' ? 'on' : ''}">ADEX・QLEA・本社 ${rows.filter((s) => s.role !== 'staff').length}</button></div>
-  <div>${show.map((s) => `<div class="nrow" style="cursor:default;display:flex;gap:12px;align-items:center">${avatar(s.displayName)}<div style="flex:1;min-width:0"><div class="t">${esc(s.displayName)}</div><div class="xs muted">${esc(s.email)}<br>${(s.properties || []).map((p) => esc(PNAMES[p] || p)).join('・') || '全物件'}</div>${s.role === 'staff' ? `<div style="display:flex;gap:6px;margin-top:6px"><button class="btn sm ghost" data-sedit="${esc(s.id)}">担当物件を変更</button>${s.disabled ? `<button class="btn sm ghost" data-son="${esc(s.id)}">再開</button>` : `<button class="btn sm danger" data-soff="${esc(s.id)}">停止</button>`}</div>` : ''}</div><span class="tag ${s.disabled ? 'red' : 'soft'}">${s.disabled ? '停止中' : '有効'}</span></div>`).join('')}</div>
+  <div>${show.map((s) => `<div class="nrow" style="cursor:default;display:flex;gap:12px;align-items:center">${avatar(s.displayName)}<div style="flex:1;min-width:0"><div class="t">${esc(s.displayName)}</div><div class="xs muted">${esc(s.email)}<br>${(s.properties || []).map((p) => esc(PNAMES[p] || p)).join('・') || '全物件'}</div>${s.role === 'staff' ? `<div style="display:flex;gap:6px;margin-top:6px"><button class="btn sm ghost" data-sedit="${esc(s.id)}">担当物件を変更</button><button class="btn sm ghost" data-smfa="${esc(s.id)}">二段階認証をリセット</button>${s.disabled ? `<button class="btn sm ghost" data-son="${esc(s.id)}">再開</button>` : `<button class="btn sm danger" data-soff="${esc(s.id)}">停止</button>`}</div>` : ''}</div><span class="tag ${s.disabled ? 'red' : 'soft'}">${s.disabled ? '停止中' : '有効'}</span></div>`).join('')}</div>
   <p class="xs muted" style="margin-top:8px">担当者のアカウントは、ADEXだけが発行・停止できます。異動・退職のときは、すぐに「停止」してください。権限を変更すると、その担当者は、いったんログアウトされます。</p>
   <button class="btn" id="newStaff" style="margin-top:14px">＋ 担当者を追加する</button>`;
 }
@@ -503,6 +574,11 @@ function bindStaff() {
     if (!confirm(msg(st.displayName))) return;
     try { await call('adminSetStaffDisabled')({ uid: st.id, disabled }); await loadAll(); render(); } catch (err) { alert('できませんでした：' + err.message); }
   }));
+  $$('[data-smfa]').forEach((b) => b.addEventListener('click', async () => {
+    const st = S.data.staff.find((x) => x.id === b.dataset.smfa);
+    if (!window.confirm(`「${st.displayName}」の二段階認証をリセットします。\n端末をなくしたときに使います。次回のログインで、認証アプリを設定し直します。\nよろしいですか？`)) return;
+    try { await call('adminResetMfa')({ uid: st.id }); alert('リセットしました。次回のログインで、認証アプリを設定し直してもらってください。'); } catch (err) { alert('できませんでした：' + err.message); }
+  }));
   toggle('data-soff', true, (n) => `「${n}」のアカウントを停止します。すぐにログインできなくなります。よろしいですか？`);
   toggle('data-son', false, (n) => `「${n}」のアカウントを再開します。よろしいですか？`);
 }
@@ -538,6 +614,10 @@ onAuthStateChanged(auth, async (u) => {
   if (!u) { S.user = null; return viewLogin(); }
   const t = await u.getIdTokenResult(true);
   if (!t.claims.role || t.claims.role === 'member') { await signOut(auth); return viewLogin('<div class="banner err">この画面は、担当者のみご利用いただけます</div>'); }
+  if (!(t.claims.firebase && t.claims.firebase.sign_in_second_factor === 'totp')) {
+    if (multiFactor(u).enrolledFactors.length === 0) return viewEnroll(u); // 初めてのログイン：認証アプリを設定する
+    await signOut(auth); return viewLogin('<div class="banner err">二段階認証が必要です。もう一度、ログインしてください</div>');
+  }
   S.user = u; S.claims = t.claims; S.tab = 'overview';
   root.innerHTML = '<div class="section center muted" style="padding-top:30vh">読み込み中…</div>';
   try { await loadAll(); render(); } catch (e) { root.innerHTML = `<div class="section"><div class="banner err">データを読み込めませんでした：${esc(e.message)}</div><button class="btn sm" onclick="location.reload()">再読み込み</button></div>`; }

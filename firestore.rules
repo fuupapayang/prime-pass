@@ -7,7 +7,9 @@ service cloud.firestore {
 
     function signedIn() { return request.auth != null; }
     function role() { return request.auth.token.role; }
-    function isRole(r) { return signedIn() && role() == r; }
+    // 担当者（ADEX・QLEA・ES CON本社・物件担当者）は、二段階認証（認証アプリ）でログインしているときだけ。お客様は、対象外
+    function mfaOk() { return request.auth.token.firebase.sign_in_second_factor == 'totp'; }
+    function isRole(r) { return signedIn() && role() == r && (r == 'member' || mfaOk()); }
     function isStaffOf(p) { return isRole('staff') && p in request.auth.token.properties; }
 
     // 設定（画像・動画の場所の一覧）。ログイン済みなら読める。書き込みは、サーバーのみ
@@ -74,7 +76,7 @@ service cloud.firestore {
 
     // 担当者一覧はADEXと本人のみ
     match /staff/{uid} {
-      allow read: if isRole('adex') || (signedIn() && request.auth.uid == uid);
+      allow read: if isRole('adex') || (signedIn() && mfaOk() && request.auth.uid == uid);
     }
 
     // それ以外（tokens, intakeIndex, pushTokens など）は、すべて拒否。書き込みは、サーバーのみ

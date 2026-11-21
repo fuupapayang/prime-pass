@@ -5,6 +5,8 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes, createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { enrollTotp, signInWithMfa } from './mfa.mjs';
+const WEBKEY = 'AIzaSyC8f-gfj7rVvrkXwErw1bdC5HMixpI9kfA';
 
 const P = 'smipocket-stg';
 const DOC = `projects/${P}/databases/(default)/documents`;
@@ -59,6 +61,20 @@ for (const a of ACCOUNTS) {
   }
   a.uid = uid;
 }
+
+/* ---- 二段階認証（認証アプリ）：テスト用アカウントを登録し、設定キーを .local に保存する ---- */
+const MFAFILE = '.local/mfa-secrets.json';
+const SECRETS = existsSync(MFAFILE) ? JSON.parse(readFileSync(MFAFILE, 'utf8')) : {};
+for (const a of ACCOUNTS) {
+  let ok = false;
+  if (SECRETS[a.email]) { try { await signInWithMfa({ email: a.email, password: PASSWORD, key: WEBKEY, secret: SECRETS[a.email] }); ok = true; } catch { /* 登録し直す */ } }
+  if (ok) continue;
+  // 登録済みなのに設定キーがない／合わない場合は、いったん解除してから、登録し直す
+  await api('POST', `${AUTH}/accounts:update`, { localId: a.uid, mfa: { enrollments: [] } }).catch(() => {});
+  const r = await signInWithMfa({ email: a.email, password: PASSWORD, key: WEBKEY });
+  SECRETS[a.email] = await enrollTotp(r.idToken, WEBKEY);
+}
+writeFileSync(MFAFILE, JSON.stringify(SECRETS, null, 2));
 
 /* ---- Firestore ---- */
 function toValue(v) {
@@ -156,6 +172,9 @@ const lines = [
   `共通パスワード: ${PASSWORD}`,
   '',
   ...ACCOUNTS.map((a) => `${a.label.padEnd(20, '　')} ${a.email}`),
+  '',
+  '二段階認証（認証アプリ）の設定キー ※Google Authenticatorなどで「設定キーを入力」→ 種類は「時間ベース」',
+  ...ACCOUNTS.map((a) => `${a.label}: ${SECRETS[a.email]}`),
   '',
   '管理画面: https://fuupapayang.github.io/prime-pass/admin/',
   'お客様の登録（サンプルフォーム）: https://fuupapayang.github.io/prime-pass/form/',

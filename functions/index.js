@@ -47,8 +47,12 @@ async function audit(actor, action, detail) {
   await db.collection('auditLogs').add({ actor, action, detail: detail || {}, at: FieldValue.serverTimestamp() });
 }
 
+// 担当者（ADEX・QLEA・ES CON本社・物件担当者）は、二段階認証（認証アプリ）でログインした場合だけ、操作できる
+const hasMfa = (auth) => !!(auth.token.firebase && auth.token.firebase.sign_in_second_factor === 'totp');
 function requireAuth(req) {
   if (!req.auth) throw new HttpsError('unauthenticated', 'ログインが必要です');
+  const r = req.auth.token.role;
+  if (r && r !== 'member' && !hasMfa(req.auth)) throw new HttpsError('permission-denied', '二段階認証が必要です。認証アプリのコードで、ログインし直してください');
   return req.auth;
 }
 
@@ -551,5 +555,16 @@ exports.markGuideRead = onCall(async (req) => {
   const snap = await ref.get();
   if (!snap.exists || snap.data().cid !== auth.uid) throw new HttpsError('not-found', 'ご案内が見つかりません');
   if (!snap.data().readAt) await ref.update({ readAt: FieldValue.serverTimestamp() });
+  return { ok: true };
+});
+
+/* ---------- 12. 二段階認証のリセット（端末をなくしたとき。ADEXが、物件担当者に対して行う） ---------- */
+exports.adminResetMfa = onCall(async (req) => {
+  const a = requireRole(req, ['adex']);
+  const uid = clean(req.data && req.data.uid, 60);
+  await staffOf(uid);
+  await admin.auth().updateUser(uid, { multiFactor: { enrolledFactors: null } });
+  await admin.auth().revokeRefreshTokens(uid);
+  await audit(a.uid, 'staff_mfa_reset', { uid });
   return { ok: true };
 });

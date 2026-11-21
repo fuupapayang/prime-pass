@@ -2,6 +2,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, signOut,
+  multiFactor, getMultiFactorResolver, TotpMultiFactorGenerator,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import {
   getFirestore, collection, query, where, getDocs, doc, getDoc,
@@ -14,7 +15,7 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const fns = getFunctions(app, REGION);
 export const call = (name) => httpsCallable(fns, name);
-export { onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, signOut, collection, query, where, getDocs, doc, getDoc };
+export { multiFactor, getMultiFactorResolver, TotpMultiFactorGenerator, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, signOut, collection, query, where, getDocs, doc, getDoc };
 
 export const authReady = new Promise((resolve) => {
   const un = onAuthStateChanged(auth, (u) => { un(); resolve(u); });

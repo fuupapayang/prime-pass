@@ -2,6 +2,7 @@
 //   node scripts/verify.mjs
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { signInWithMfa, enrollTotp } from './mfa.mjs';
 
 const P = 'smipocket-stg';
 const KEY = 'AIzaSyC8f-gfj7rVvrkXwErw1bdC5HMixpI9kfA';
@@ -10,10 +11,9 @@ const PW = readFileSync('.local/test-accounts.txt', 'utf8').match(/共通パス�
 const PROPS = ['hayama24', 'meguro62', 'doyama227', 'ost-garden'];
 const COLS = ['memberships', 'contacts', 'inquiries', 'events', 'notices'];
 
-const signIn = async (email) => {
-  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: PW, returnSecureToken: true }) });
-  const j = await r.json(); if (!r.ok) throw new Error(JSON.stringify(j)); return j.idToken;
-};
+const SECRETS = JSON.parse(readFileSync('.local/mfa-secrets.json', 'utf8'));
+const tokCache = {};
+const signIn = async (email) => (tokCache[email] ||= (await signInWithMfa({ email, password: PW, key: KEY, secret: SECRETS[email] })).idToken);
 const canRead = async (tok, col, p) => {
   const r = await fetch(`https://firestore.googleapis.com/v1/projects/${P}/databases/(default)/documents:runQuery`, {
     method: 'POST', headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
@@ -23,6 +23,8 @@ const canRead = async (tok, col, p) => {
   if (!r.ok) return 'X';
   return j.filter((x) => x.document).length;
 };
+const qdocs = async (tok, col, field, val) => { const r = await fetch(`https://firestore.googleapis.com/v1/projects/${P}/databases/(default)/documents:runQuery`, { method: 'POST', headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ structuredQuery: { from: [{ collectionId: col }], where: { fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: { stringValue: val } } } } }) }); const j = await r.json(); return Array.isArray(j) ? j.filter((x) => x.document).map((x) => x.document) : []; };
+const callJ = async (tok, name, data) => { const r = await fetch(`${FN}/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` }, body: JSON.stringify({ data }) }); return r.json(); };
 const callFn = async (tok, name, data) => {
   const r = await fetch(`${FN}/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}) }, body: JSON.stringify({ data }) });
   const j = await r.json(); return j.error ? `拒否(${j.error.status})` : '成功';
@@ -115,9 +117,10 @@ if (rd1.result) {
   gchk('お客様が、ご案内を送ろうとする→拒否', !!(await gj(mtok, { cid: gcid, property: 'meguro62', kind: 'message', title: 'x', message: 'x' })).error);
 }
 console.log('\n■ ADEX専用の管理機能（物件・担当者）');
-const callJ = async (tok, name, data) => { const r = await fetch(`${FN}/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` }, body: JSON.stringify({ data }) }); return r.json(); };
 const chk = (label, ok) => { console.log(`${label}: ${ok ? '期待どおり' : 'NG'}`); if (!ok) bad++; };
 const adexTok = await signIn('adex@primepass.test');
+const pwOnly = (await signInWithMfa({ email: 'staff1@primepass.test', password: PW, key: KEY, secret: undefined }).catch(() => null));
+chk('二段階認証を登録済みの担当者は、パスワードだけではログインを完了できない', pwOnly === null);
 const staff1Tok = await signIn('staff1@primepass.test');
 const qdocs0 = async (tok, id) => { const r = await fetch(`https://firestore.googleapis.com/v1/projects/${P}/databases/(default)/documents/properties/${id}`, { headers: { Authorization: `Bearer ${tok}` } }); const j = await r.json(); return Object.entries(j.fields || {}).filter(([k, v]) => v.stringValue).map(([k]) => k); };
 const PID = 'zz-test-' + Date.now().toString(36);
@@ -141,18 +144,26 @@ chk('担当者が、担当者アカウントを発行しようとする→拒否
 const cr = await callJ(adexTok, 'adminCreateStaff', { email: em, name: '自動テスト担当者', properties: ['meguro62'] });
 chk('ADEXが、担当者アカウントを発行する→成功（パスワードを返す）', !!(cr.result && cr.result.password));
 if (cr.result) {
-  const nr = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: em, password: cr.result.password, returnSecureToken: true }) });
-  const nj = await nr.json();
-  chk('発行した担当者が、ログインできる', !!nj.idToken);
+  const nr0 = await signInWithMfa({ email: em, password: cr.result.password, key: KEY });
+  chk('発行した担当者が、パスワードでログインできる（二段階の設定前）', !!nr0.idToken && nr0.mfa === false);
+  chk('　二段階の設定前は、データを読めない（自分の物件も）', (await canRead(nr0.idToken, 'contacts', 'meguro62')) === 'X');
+  chk('　二段階の設定前は、通知の配信も拒否される', !!(await callJ(nr0.idToken, 'saveNotice', { property: 'meguro62', title: '[自動テスト] x', body: 'x', action: 'draft' })).error);
+  const nsecret = await enrollTotp(nr0.idToken, KEY);
+  const nj = await signInWithMfa({ email: em, password: cr.result.password, key: KEY, secret: nsecret });
+  chk('認証アプリを登録すると、二段階でログインできる', !!nj.idToken && nj.mfa === true);
   if (nj.idToken) {
     chk('　自分の物件（目黒）は、読める', (await canRead(nj.idToken, 'contacts', 'meguro62')) !== 'X');
     chk('　他の物件（葉山）は、読めない', (await canRead(nj.idToken, 'contacts', 'hayama24')) === 'X');
     chk('ADEXが、担当物件を変更する→成功', !!(await callJ(adexTok, 'adminUpdateStaff', { uid: cr.result.uid, properties: ['hayama24'] })).result);
-    const nr2 = await (await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: em, password: cr.result.password, returnSecureToken: true }) })).json();
+    const nr2 = await signInWithMfa({ email: em, password: cr.result.password, key: KEY, secret: nsecret });
     chk('　変更後は、葉山が読めて、目黒は読めない', (await canRead(nr2.idToken, 'contacts', 'hayama24')) !== 'X' && (await canRead(nr2.idToken, 'contacts', 'meguro62')) === 'X');
+    chk('担当者が、他の担当者の二段階認証をリセットしようとする→拒否', !!(await callJ(staff1Tok, 'adminResetMfa', { uid: cr.result.uid })).error);
+    chk('ADEXが、二段階認証をリセットする→成功', !!(await callJ(adexTok, 'adminResetMfa', { uid: cr.result.uid })).result);
+    const nr1 = await signInWithMfa({ email: em, password: cr.result.password, key: KEY });
+    chk('　リセット後は、パスワードだけでログインでき、データは読めない（再設定が必要）', nr1.mfa === false && (await canRead(nr1.idToken, 'contacts', 'hayama24')) === 'X');
     chk('ADEXが、アカウントを停止する→成功', !!(await callJ(adexTok, 'adminSetStaffDisabled', { uid: cr.result.uid, disabled: true })).result);
-    const nr3 = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: em, password: cr.result.password, returnSecureToken: true }) });
-    chk('　停止後は、ログインできない', !nr3.ok);
+    let nr3ok = true; try { await signInWithMfa({ email: em, password: cr.result.password, key: KEY }); } catch { nr3ok = false; }
+    chk('　停止後は、ログインできない', !nr3ok);
   }
 }
 console.log('\n■ 問い合わせの対応状況');
@@ -163,7 +174,6 @@ chk('ADEXが、「未対応」に戻す→成功', !!(await callJ(adexTok, 'setI
 const qleaTok = await signIn('qlea@primepass.test');
 chk('QLEAが、問い合わせを変更→拒否', !!(await callJ(qleaTok, 'setInquiryStatus', { id: 'demo_q1', status: 'done' })).error);
 console.log('\n■ 通知の承認フロー・予約配信');
-const qdocs = async (tok, col, field, val) => { const r = await fetch(`https://firestore.googleapis.com/v1/projects/${P}/databases/(default)/documents:runQuery`, { method: 'POST', headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ structuredQuery: { from: [{ collectionId: col }], where: { fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: { stringValue: val } } } } }) }); const j = await r.json(); return Array.isArray(j) ? j.filter((x) => x.document).map((x) => x.document) : []; };
 const T0 = `[自動テスト] 承認 ${Date.now()}`;
 chk('承認が必要な物件で、担当者が、いますぐ配信→拒否', !!(await callJ(staff2Tok, 'sendNotice', { property: 'meguro62', title: T0, body: 'x' })).error);
 const sub = await callJ(staff2Tok, 'saveNotice', { property: 'meguro62', title: T0, body: 'テスト本文', action: 'submit' });
