@@ -85,7 +85,7 @@ exports.intake = onRequest({ cors: ALLOWED_ORIGINS }, async (req, res) => {
     if (ap.includes(one)) targets = [one];
   } else if (Array.isArray(b.projects)) {
     targets = (await matchProjects(b.projects.slice(0, 30).map((x) => clean(x, 120)))).filter((id) => ap.includes(id));
-    if (!targets.length && ap.includes('prime')) targets = ['prime']; // 物件が選ばれていない場合は、会員向けページのみ
+    if (ap.includes('prime') && !targets.includes('prime')) targets.push('prime'); // プライムサイトからの登録者は、必ず、会員向けページ（エスコン プライム）にも登録する。アプリのホームは、このページになる
   }
   if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !phone || !targets.length || b.consent !== true) {
     return res.status(400).json({ error: 'invalid_input' });

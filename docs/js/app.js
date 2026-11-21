@@ -343,13 +343,17 @@ function viewHome() {
   renderPushBox();
 }
 
-function viewPrime() {
-  setTabs('#/collection'); S.curProp = null;
-  app.innerHTML = `${subHeader('エスコン プライム', '#/home')}
+// エスコンプライムサイトから登録した方は、アプリのホームが、エスコン プライムのページになる
+const isPrimeMember = () => S.memberships.some((m) => m.property === 'prime');
+function viewPrime(asHome) {
+  setTabs(asHome ? '#/home' : '#/collection'); S.curProp = null;
+  const s0 = seen(); const latest0 = S.notices.slice().sort((a, b) => (b.publishedAt?.toMillis?.() || 0) - (a.publishedAt?.toMillis?.() || 0)).slice(0, 3);
+  app.innerHTML = `${asHome ? topbar() : subHeader('エスコン プライム', '#/home')}
   <div class="pagenote">${ICON.globe.replace('width="20" height="20"', 'width="12" height="12"')} 掲載内容は、ES CON プライムメンバーシップ サイトに準じています（テスト用の表示）</div>
   <div class="frame-hero" id="primeHero" style="height:420px;${A('hero') ? `background-image:url('${esc(A('hero'))}')` : ''}"><div class="hero-yt"><div id="heroYt"></div></div><div class="k">ESCON PRIME</div><div class="name">暮らしの、その先へ。</div></div>
   <div class="slogan"><p class="jp">この国の技術を未来へ継承し、<br>次世代の暮らしに新たな価値を。</p><p class="en">Heritage and the spirit of Craftsmanship</p></div>
   <div class="section">
+    ${asHome ? `<div class="sec-line"><h2 class="h2s">新着のお知らせ</h2><a href="#/notices">すべて見る</a></div><div class="list" style="margin-bottom:26px">${latest0.length ? latest0.map((n) => noticeLine(n, s0)).join('') : '<div class="list-item"><div class="d">お知らせは、まだありません</div></div>'}</div>` : ''}
     <p class="eyebrow" style="margin-top:6px">BRAND STORY</p>
     <h2 class="display-jp" style="font-size:19px">私たちが大切にしていること</h2>
     <p class="muted small" style="margin-top:10px">私たちのつくるものに、ひとつとして、同じ家はない。住まう人の幸せを思い描き、その歓びが、次代まで輝き続けるために。私たちは、挑戦する。一人ひとりの個性でつくる、本物のプレステージへ。</p>
@@ -683,7 +687,7 @@ async function enablePush(silent) {
     return true;
   } catch (e) { why('通知を設定できませんでした：' + esc(e.message || String(e))); return false; }
 }
-async function refreshNotices() { try { await loadData(); const r = currentRoute(); if (r === '#/home') viewHome(); if (r === '#/notices') viewNotices(); } catch { /* noop */ } }
+async function refreshNotices() { try { await loadData(); const r = currentRoute(); if (r === '#/home') (isPrimeMember() ? viewPrime(true) : viewHome()); if (r === '#/notices') viewNotices(); } catch { /* noop */ } }
 
 /* ---------- 起動・ルーティング ---------- */
 const currentRoute = () => location.hash || '#/home';
@@ -695,7 +699,7 @@ function route() {
   else if ((m = r.match(/^#\/notice\/([\w-]+)$/))) viewNotice(m[1]);
   else if ((m = r.match(/^#\/guide\/([\w-]+)$/))) viewGuide(m[1]);
   else if ((m = r.match(/^#\/p\/([\w-]+)(?:\/(plans|gallery))?$/))) viewProperty(m[1], m[2]);
-  else ({ '#/home': viewHome, '#/prime': viewPrime, '#/collection': viewCollection, '#/notices': viewNotices, '#/guide': viewGuides, '#/contact': viewContact, '#/visit': viewVisit, '#/install': viewInstall, '#/push': viewPush, '#/ready': viewReady, '#/thanks': viewThanks, '#/settings': viewSettings }[r] || viewHome)();
+  else ({ '#/home': () => (isPrimeMember() ? viewPrime(true) : viewHome()), '#/prime': () => viewPrime(false), '#/collection': viewCollection, '#/notices': viewNotices, '#/guide': viewGuides, '#/contact': viewContact, '#/visit': viewVisit, '#/install': viewInstall, '#/push': viewPush, '#/ready': viewReady, '#/thanks': viewThanks, '#/settings': viewSettings }[r] || viewHome)();
   window.scrollTo(0, 0);
 }
 document.addEventListener('click', (e) => {
