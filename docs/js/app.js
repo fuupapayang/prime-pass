@@ -78,9 +78,11 @@ function toast(msg) {
 }
 const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const ua = navigator.userAgent;
-const isIOS = /iPhone|iPad|iPod/.test(ua);
+const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOSは、Macと同じ表示になるため、タッチの有無でも判定
 const isAndroid = /Android/.test(ua);
-const inApp = /Line\/|FBAN|FBAV|Instagram|MicroMessenger|Twitter/.test(ua);
+const isTouchSmall = navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900;
+const isMobileUA = /Mobi|iPhone|iPad|iPod|Android/.test(ua) || (navigator.userAgentData && navigator.userAgentData.mobile === true) || isTouchSmall;
+const inApp = /Line\/|FBAN|FBAV|Instagram|MicroMessenger|Twitter|TikTok|musical_ly|KAKAOTALK|GSA\/|YJApp|Yahoo/.test(ua) || (/iPhone|iPad|iPod/.test(ua) && !/Safari\//.test(ua) && !isStandalone());
 const pname = (id) => (S.properties.find((p) => p.id === id) || {}).name || id;
 
 /* ---------- 画面の部品 ---------- */
@@ -138,7 +140,7 @@ function viewWelcome() {
   </div>`;
 }
 
-const copyUrl = async () => { try { await navigator.clipboard.writeText(S.qrUrl || (location.origin + location.pathname)); toast('URLをコピーしました'); } catch { toast('コピーできませんでした'); } };
+const copyUrl = async () => { if (!S.qrUrl) { toast('URLを準備しています。少し待って、もう一度押してください'); return; } try { await navigator.clipboard.writeText(S.qrUrl); toast('URLをコピーしました'); } catch { toast('コピーできませんでした'); } };
 const stepLine = (n, t, sm, ic) => `<div class="stepline"><span class="no">${n}</span><div class="tx">${t}${sm ? `<small>${sm}</small>` : ''}</div><span class="ic">${ic}</span></div>`;
 
 function viewInstall() {
@@ -158,7 +160,7 @@ function viewInstall() {
       <p class="muted small">ホーム画面に追加すると、最新の情報を通知でお届けします。次の3ステップで完了します。<br>※iPhoneでは、追加したあとでないと、通知が届きません（iOS 16.4以上）。</p>
       <div style="margin-top:10px">${stepLine(1, '画面下の「共有」ボタンをタップ', '四角から上向きの矢印のボタンです', ICON.share)}${stepLine(2, '「ホーム画面に追加」を選ぶ', 'メニューを上にスクロールして探します', ICON.plus)}${stepLine(3, '右上の「追加」をタップ', 'ホーム画面にアイコンができます', ICON.check)}</div>
       <div class="stack" style="margin-top:24px"><button class="btn ghost" data-go="#/ready">追加できたら、次へ</button><button class="btn ghost" data-go="#/push">あとで追加する</button></div></div>`;
-  } else if (isAndroid) {
+  } else if (isAndroid || isMobileUA) {
     html = `${head('Welcome Home', '<div class="timechip"><b>約10秒で完了</b>Android（Chrome）の手順です</div>')}
       <h2 class="display-jp" style="margin:6px 0 8px;font-size:26px;letter-spacing:.08em">ご登録ありがとうございます</h2>
       <p class="muted small">ボタンを押すだけで、ホーム画面に追加できます。</p>
@@ -179,23 +181,31 @@ function viewInstall() {
   if (isIOS && !inApp && S.user) prepareInstallManifest();
   const cb = $('#copyBtn'); if (cb) cb.addEventListener('click', (e) => { e.preventDefault(); copyUrl(); });
   const ib = $('#installBtn'); if (ib) ib.addEventListener('click', async () => { if (S.deferred) { S.deferred.prompt(); const c = await S.deferred.userChoice.catch(() => ({})); S.deferred = null; location.hash = c.outcome === 'accepted' ? '#/ready' : '#/push'; } else toast('右上の「︙」メニューから「ホーム画面に追加」を選んでください'); });
-  const qr = $('#qr');
-  if (qr) {
-    const sc = document.createElement('script');
-    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
-    sc.onload = async () => { let u = location.origin + location.pathname; try { const r = await call('mintHandoff')({ kind: 'qr' }); u += '?t=' + encodeURIComponent(r.data.token); } catch { /* 番号が作れない場合は、URLのみ */ } S.qrUrl = u; const q = window.qrcode(0, 'M'); q.addData(u); q.make(); qr.innerHTML = q.createSvgTag(5) + ''; };
-    sc.onerror = () => { qr.textContent = location.origin + location.pathname; };
-    document.head.appendChild(sc);
+  S.qrUrl = null;
+  if (inApp || $('#qr')) {
+    call('mintHandoff')({ kind: 'qr' }).then((r) => { S.qrUrl = location.origin + location.pathname + '?t=' + encodeURIComponent(r.data.token); drawQr(); }).catch(() => { drawQr(); });
   }
+}
+function drawQr() {
+  const qr = $('#qr'); if (!qr) return;
+  const u = S.qrUrl || (location.origin + location.pathname);
+  const draw = () => { const q = window.qrcode(0, 'M'); q.addData(u); q.make(); qr.innerHTML = q.createSvgTag(5); };
+  if (window.qrcode) { draw(); return; }
+  const sc = document.createElement('script');
+  sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+  sc.onload = draw; sc.onerror = () => { qr.textContent = u; };
+  document.head.appendChild(sc);
 }
 
 // iPhone：ホーム画面に追加したアプリは、Safariとログインを共有しない。追加用の設定ファイルの開始URLに、使い捨ての番号を入れておき、初回の起動で、自動でログインする
 async function prepareInstallManifest() {
+  if (S.manifestAt && Date.now() - S.manifestAt < 30 * 60 * 1000) return;
   try {
     const r = await call('mintHandoff')({ kind: 'install' });
     const base = location.origin + location.pathname;
     const m = { name: 'PRIME PASS', short_name: 'PRIME PASS', description: '会員限定の、物件情報アプリ（テスト環境）', start_url: base + '?t=' + encodeURIComponent(r.data.token), scope: base, display: 'standalone', background_color: '#f4ede1', theme_color: '#193a2b', lang: 'ja',
       icons: [{ src: base + 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' }, { src: base + 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }] };
+    S.manifestAt = Date.now();
     const old = document.querySelector('link[rel="manifest"]'); if (old) old.remove();
     const l = document.createElement('link'); l.rel = 'manifest'; l.href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(m)); document.head.appendChild(l);
   } catch { /* 作れない場合は、通常の設定ファイルのまま */ }
@@ -212,18 +222,20 @@ function viewPush() {
     <div class="benefit"><span class="ic">${ICON.tag}</span><div><b>販売状況の更新</b><span>最新の状況をお伝えします</span></div></div>
     <div class="benefit"><span class="ic">${ICON.mail}</span><div><b>担当者からのご案内</b><span>お客様宛の資料やご連絡</span></div></div>
     <hr class="hr"><p class="xs muted">通知はいつでも設定から変更できます。iPhoneでは、ホーム画面から開いたときに受け取れます。</p>
-    <div class="stack" style="margin-top:22px"><button class="btn" id="pushOk">${granted ? 'ホームへ進む' : '通知を受け取る'}</button>${granted ? '' : '<button class="btn ghost" data-go="#/home">あとで</button>'}</div></div>`;
-  $('#pushOk').addEventListener('click', async () => { if (!granted) await enablePush(true); location.hash = '#/home'; });
+    <div id="pushMsg">${isIOS && !isStandalone() ? '<div class="banner warn" style="margin-top:14px"><b>通知は、ホーム画面に追加したアプリで、オンにできます。</b><br>先に、ホーム画面への追加を済ませてください。<br><a href="#/install" style="color:inherit;text-decoration:underline">追加の手順を見る</a></div>' : ''}</div><div class="stack" style="margin-top:22px"><button class="btn" id="pushOk" ${isIOS && !isStandalone() ? 'disabled' : ''}>${granted ? 'ホームへ進む' : '通知を受け取る'}</button>${granted ? '' : '<button class="btn ghost" data-go="#/home">あとで</button>'}</div></div>`;
+  $('#pushOk').addEventListener('click', async () => { if (granted) { location.hash = '#/home'; return; } const b = $('#pushOk'); b.disabled = true; b.textContent = '設定しています…'; const ok = await enablePush(true); if (ok) { location.hash = '#/home'; } else { b.disabled = false; b.textContent = '通知を受け取る'; } });
 }
 
 function viewReady() {
   setTabs(null);
+  const sa = isStandalone();
+  const icon = '<div class="center" style="background:var(--soft);padding:22px;margin:20px 0"><div style="width:56px;height:56px;background:var(--gold);color:#fff;display:grid;place-items:center;margin:0 auto 8px;font-weight:700;font-size:24px">P</div><div class="xs">PRIME PASS</div></div>';
   app.innerHTML = `${topbar(false)}<div class="section" style="padding-top:20px"><p class="eyebrow">Members exclusive</p><h1 class="display">You’re Ready</h1>
     <div class="thanks-box" style="margin-top:22px">${ICON.check.replace('width="14" height="14"', 'width="30" height="30"')}</div>
-    <h2 class="display-jp" style="margin-bottom:8px;font-size:24px">ホーム画面に追加できました</h2>
-    <p class="muted small">ホーム画面の「PRIME PASS」のアイコンから開いてください。</p>
-    <div class="center" style="background:var(--soft);padding:22px;margin:20px 0"><div style="width:56px;height:56px;background:var(--gold);color:#fff;display:grid;place-items:center;margin:0 auto 8px;font-weight:700;font-size:24px">P</div><div class="xs">PRIME PASS</div></div>
-    <button class="btn" data-go="#/push">アプリを開く</button></div>`;
+    <h2 class="display-jp" style="margin-bottom:8px;font-size:24px">${sa ? 'ホーム画面に追加できました' : 'あと少しです'}</h2>
+    <p class="muted small">${sa ? 'このアプリから、最新の情報をお届けします。最後に、通知の設定をします。' : '追加が終わったら、ホーム画面の「PRIME PASS」のアイコンをタップして、開いてください。開くと、通知の設定に進みます。'}</p>
+    ${icon}
+    ${sa ? '<button class="btn" data-go="#/push">次へ（通知の設定）</button>' : '<p class="xs center" style="margin:0"><a href="#/install" style="color:var(--muted);text-decoration:underline">追加の手順を、もう一度見る</a></p>'}</div>`;
 }
 
 function noticeRow(n, s) {
@@ -579,12 +591,16 @@ async function renderPushBox() {
   box.innerHTML = '<button class="btn ghost" id="pushBtn">お知らせ通知をオンにする</button><p class="xs muted" style="margin-top:8px">新しい物件情報や、限定の情報を、通知でお知らせします。</p>';
   $('#pushBtn').addEventListener('click', () => enablePush(false));
 }
+// 戻り値：true＝オンにできた / false＝できなかった（理由は、画面に表示）
 async function enablePush(silent) {
+  const why = (m) => { const b = $('#pushMsg'); if (b) b.innerHTML = `<div class="banner warn" style="margin-top:14px">${m}</div>`; else toast(m.replace(/<[^>]+>/g, '')); };
   try {
+    if (isIOS && !isStandalone()) { why('iPhoneでは、ホーム画面に追加したアプリから、通知をオンにできます。<br><a href="#/install" style="color:inherit;text-decoration:underline">追加の手順を見る</a>'); return false; }
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) { why('このブラウザは、通知に対応していません。'); return false; }
     const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
-    if (perm !== 'granted') { renderPushBox(); return; }
+    if (perm !== 'granted') { why('通知が許可されませんでした。端末の設定から、このアプリの通知を許可してください。'); renderPushBox(); return false; }
     const { getMessaging, getToken, onMessage, isSupported } = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js');
-    if (!(await isSupported())) { toast('このブラウザは、通知に対応していません'); return; }
+    if (!(await isSupported())) { why('このブラウザは、通知に対応していません。'); return false; }
     const { app: fbApp } = await import('./fb.js');
     const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
     await navigator.serviceWorker.ready;
@@ -596,7 +612,8 @@ async function enablePush(silent) {
     onMessage(messaging, (p) => { toast((p.notification && p.notification.title) || '新しいお知らせがあります'); refreshNotices(); });
     if (!silent) toast('お知らせ通知をオンにしました');
     renderPushBox();
-  } catch (e) { toast('通知を設定できませんでした：' + e.message); }
+    return true;
+  } catch (e) { why('通知を設定できませんでした：' + esc(e.message || String(e))); return false; }
 }
 async function refreshNotices() { try { await loadData(); const r = currentRoute(); if (r === '#/home') viewHome(); if (r === '#/notices') viewNotices(); } catch { /* noop */ } }
 
