@@ -173,7 +173,7 @@ function viewInstall() {
       <div class="center" style="margin:20px 0"><div class="qrbox" id="qr">読み込み中…</div><div class="xs muted" style="margin-top:8px">カメラで読み取ってください</div></div>
       <div class="banner warn" style="text-align:center;margin:6px 0 10px"><b>15分以内に登録してください。</b><br><span class="xs">QRコードは、15分間・1回だけ使えます。期限が切れた場合は、もう一度、登録フォームからお進みください。</span></div>
       <p class="xs muted center">QRコードを読み取ると、スマートフォンに案内ページが開きます。</p>
-      <div class="stack" style="margin-top:14px"><button class="btn" data-go="#/push">ご登録を進める</button><p class="xs muted center" style="margin:0">スマートフォンをお持ちでない場合は、パソコンのまま進めます。</p><p class="xs center" style="margin:8px 0 0"><a href="#" id="copyBtn" style="color:var(--muted);text-decoration:underline">スマートフォンに送るURLをコピー（15分有効）</a></p></div></div>`;
+      <div class="stack" style="margin-top:14px"><button class="btn" data-go="#/push">ご登録を進める</button><p class="xs muted center" style="margin:0">スマートフォンをお持ちでない場合は、ご使用のPCで<a href="#/push" style="color:var(--green,#193a2b);text-decoration:underline;font-weight:600">このままご登録画面にお進みください</a>。</p><p class="xs center" style="margin:8px 0 0"><a href="#" id="copyBtn" style="color:var(--muted);text-decoration:underline">スマートフォンに送るURLをコピー（15分有効）</a></p></div></div>`;
   }
   app.innerHTML = html;
   if (isIOS && !inApp && S.user) prepareInstallManifest();
