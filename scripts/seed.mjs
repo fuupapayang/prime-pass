@@ -49,6 +49,8 @@ for (const a of ACCOUNTS) {
   try {
     const r = await api('POST', `${AUTH}/accounts`, { email: a.email, password: PASSWORD, displayName: a.name, emailVerified: true, customAttributes: JSON.stringify(a.claims) });
     uid = r.localId;
+    // 作成時には役割（customAttributes）が反映されないため、続けて更新する
+    await api('POST', `${AUTH}/accounts:update`, { localId: uid, customAttributes: JSON.stringify(a.claims) });
   } catch (e) {
     if (!/EMAIL_EXISTS/.test(JSON.stringify(e.body))) throw e;
     const l = await api('POST', `${AUTH}/accounts:lookup`, { email: [a.email] });
