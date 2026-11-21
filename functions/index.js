@@ -167,8 +167,10 @@ function deviceHint(req) {
   const h = (req.rawRequest && req.rawRequest.headers) || {};
   const ip = String(h['x-forwarded-for'] || (req.rawRequest && req.rawRequest.ip) || '').split(',')[0].trim();
   const ua = String(h['user-agent'] || '');
-  const m = ua.match(/\((iPhone|iPad|iPod)[^)]*?OS (\d+)[_.](\d+)/);
-  const dev = m ? `${m[1]}-${m[2]}.${m[3]}` : '';
+  // 端末の目印：画面の大きさと倍率（Safariとホーム画面アプリで同じ）。iPhoneでも、UAがMacと同じになる場合があるため、UAには頼らない
+  const d = req.data || {};
+  const dev = /^\d{3,4}x\d{3,4}@[\d.]{1,4}$/.test(String(d.dev || '')) ? String(d.dev) : '';
+  void ua;
   return { ipHash: ip ? sha256('ip:' + ip) : '', dev };
 }
 exports.claimInstall = onCall(async (req) => {

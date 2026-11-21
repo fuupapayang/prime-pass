@@ -80,6 +80,7 @@ const isStandalone = () => window.matchMedia('(display-mode: standalone)').match
 const ua = navigator.userAgent;
 const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1 && !/Android/.test(ua)); // iPadOSは、Macと同じ表示になるため、タッチの有無でも判定
 const isAndroid = /Android/.test(ua);
+const devKey = () => `${Math.min(screen.width, screen.height)}x${Math.max(screen.width, screen.height)}@${Math.round((window.devicePixelRatio || 1) * 100) / 100}`;
 const isTouchSmall = navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900;
 const isMobileUA = /Mobi|iPhone|iPad|iPod|Android/.test(ua) || (navigator.userAgentData && navigator.userAgentData.mobile === true) || isTouchSmall;
 const inApp = /Line\/|FBAN|FBAV|Instagram|MicroMessenger|Twitter|TikTok|musical_ly|KAKAOTALK|GSA\/|YJApp|Yahoo/.test(ua) || (/iPhone|iPad|iPod/.test(ua) && !/Safari\//.test(ua) && !isStandalone());
@@ -201,7 +202,7 @@ function drawQr() {
 async function offerClaim() {
   app.innerHTML = '<div class="section center" style="padding-top:30vh"><p class="eyebrow">PRIME PASS</p><div class="pp-spin" aria-hidden="true"></div><p class="h2">ご登録を確認しています…</p><p class="xs muted" style="margin-top:10px">数秒かかります。画面を閉じずに、そのままお待ちください。</p></div>';
   let r = null;
-  try { r = (await Promise.race([call('claimInstall')({}), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))])).data; } catch { r = null; }
+  try { r = (await Promise.race([call('claimInstall')({ dev: devKey() }), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))])).data; } catch { r = null; }
   if (!r || !r.found) { location.hash = ''; S.user = null; viewWelcome(); return; }
   app.innerHTML = `${topbar(false)}<div class="section" style="padding-top:20px"><p class="eyebrow">Members exclusive</p><h1 class="display">Welcome Back</h1>
     <h2 class="display-jp" style="margin:16px 0 8px;font-size:24px;line-height:1.7">${esc(r.name || 'お客様')} 様ですか？</h2>
@@ -224,7 +225,7 @@ function applyInstallUrl() { if (S.installTok) history.replaceState(null, '', lo
 async function prepareInstallManifest() {
   if (S.manifestAt && Date.now() - S.manifestAt < 30 * 60 * 1000) return;
   try {
-    const r = await call('mintHandoff')({ kind: 'install' });
+    const r = await call('mintHandoff')({ kind: 'install', dev: devKey() });
     const base = location.origin + location.pathname;
     const m = { name: 'PRIME PASS', short_name: 'PRIME PASS', description: '会員限定の、物件情報アプリ（テスト環境）', start_url: base + '?i=' + encodeURIComponent(r.data.token), scope: base, display: 'standalone', background_color: '#f4ede1', theme_color: '#193a2b', lang: 'ja',
       icons: [{ src: base + 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' }, { src: base + 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }] };

@@ -19,15 +19,15 @@ for (const kind of ['qr', 'install']) {
 ok('未ログインでは、番号を作れない', !!(await post(`${FN}/mintHandoff`, { data: { kind: 'qr' } })).error);
 
 // ホーム画面アプリへの引き継ぎ（同じ回線・同じiPhone・短時間に1人だけ）
-const m2 = await post(`${FN}/mintHandoff`, { data: { kind: 'install' } }, idt, UA);
+const m2 = await post(`${FN}/mintHandoff`, { data: { kind: 'install', dev: '393x852@3' } }, idt, UA);
 ok('追加用の番号を作る', !!m2.result?.token);
-const cl0 = await post(`${FN}/claimInstall`, { data: {} }, null, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15');
-ok('iPhoneでない端末では、候補が出ない', cl0.result?.found === false);
-const cl = await post(`${FN}/claimInstall`, { data: {} }, null, UA);
-ok('同じ回線・同じiPhoneの種類で、候補が1人だけ見つかる', cl.result?.found === true && !!cl.result.claim);
+const cl0 = await post(`${FN}/claimInstall`, { data: { dev: '1440x900@2' } }, null, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15');
+ok('別の画面サイズの端末では、候補が出ない', cl0.result?.found === false);
+const cl = await post(`${FN}/claimInstall`, { data: { dev: '393x852@3' } }, null, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/26.6.1 Safari/605.1.15');
+ok('同じ回線・同じ画面サイズ（UAがMac表記でも）で、候補が1人だけ見つかる', cl.result?.found === true && !!cl.result.claim);
 const cf = await post(`${FN}/claimInstallConfirm`, { data: { claim: cl.result?.claim } });
 ok('確認のあとで、ログインの鍵を受け取る', !!cf.result?.customToken);
 const cf2 = await post(`${FN}/claimInstallConfirm`, { data: { claim: cl.result?.claim } });
 ok('同じ確認は、2回目は使えない', !!cf2.error);
-const cl2 = await post(`${FN}/claimInstall`, { data: {} }, null, UA);
+const cl2 = await post(`${FN}/claimInstall`, { data: { dev: '393x852@3' } }, null, UA);
 ok('使い終わったあとは、候補が出ない', cl2.result?.found === false);
