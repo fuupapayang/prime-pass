@@ -339,4 +339,4 @@ table.t td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-
 #primeHero { overflow: hidden; }
 #primeHero .hero-yt { position: absolute; inset: 0; z-index: 0; opacity: 0; transition: opacity .8s; pointer-events: none; }
 #primeHero.yt-on .hero-yt { opacity: 1; }
-#primeHero .hero-yt iframe { position: absolute; top: 50%; left: 50%; height: 100%; width: auto; aspect-ratio: 16 / 9; min-width: 100%; transform: translate(-50%, -50%); border: 0; pointer-events: none; }
+#primeHero .hero-yt iframe { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); border: 0; pointer-events: none; }

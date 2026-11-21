@@ -380,6 +380,10 @@ function startHeroVideo() {
       onStateChange: (e) => { if (e.data === window.YT.PlayerState.PLAYING) $('#primeHero')?.classList.add('yt-on'); if (e.data === window.YT.PlayerState.ENDED) { e.target.seekTo(0); e.target.playVideo(); } },
     } });
     S.heroPlayer = p;
+    // 動画は、縦長の映像が、横長の枠の中央に入っている。枠いっぱいに見えるよう、拡大する
+    const fit = () => { const hero = $('#primeHero'), f = hero && hero.querySelector('iframe'); if (!f) return; const W = hero.clientWidth, H = hero.clientHeight; const h = Math.max(H, W * 16 / 9); f.style.height = h + 'px'; f.style.width = (h * 16 / 9) + 'px'; };
+    const tmr = setInterval(() => { if ($('#primeHero iframe')) { fit(); clearInterval(tmr); } }, 200); setTimeout(() => clearInterval(tmr), 8000);
+    window.addEventListener('resize', fit);
   };
   if (window.YT && window.YT.Player) { mount(); return; }
   const prev = window.onYouTubeIframeAPIReady; window.onYouTubeIframeAPIReady = () => { if (prev) prev(); mount(); };
