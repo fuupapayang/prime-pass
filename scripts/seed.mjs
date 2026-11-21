@@ -83,7 +83,7 @@ async function wipe(col) {
   }
   return n;
 }
-for (const c of ['properties', 'memberships', 'contacts', 'notices', 'events', 'inquiries', 'intakeIndex', 'tokens', 'pushTokens', 'staff']) await wipe(c);
+for (const c of ['properties', 'memberships', 'contacts', 'notices', 'events', 'inquiries', 'intakeIndex', 'tokens', 'pushTokens', 'staff', 'outbox']) await wipe(c);
 
 const writes = [];
 const put = (path, data) => writes.push({ update: { name: `${DOC}/${path}`, fields: Object.fromEntries(Object.entries(data).map(([k, x]) => [k, toValue(x)])) } });
@@ -98,7 +98,7 @@ const PROPS = {
   'ost-garden': { name: 'オストガーデン軽井沢', region: '中部', area: '長野県 軽井沢町', kind: '新築' },
   'alia-hawaii': { name: 'ハワイ Alia / Kuilei', region: '海外', area: 'ハワイ', kind: '新築' },
 };
-Object.entries(PROPS).forEach(([id, p], i) => put(`properties/${id}`, { ...p, status: 'active', order: i + 1, url: '' }));
+Object.entries(PROPS).forEach(([id, p], i) => put(`properties/${id}`, { ...p, status: 'active', order: i + 1, url: '', approvalRequired: id === 'meguro62' }));
 
 const NAMES = ['山田 太郎', '佐藤 花子', '鈴木 一郎', '高橋 美咲', '田中 健', '伊藤 彩', '渡辺 誠', '中村 玲子', '小林 拓海', '加藤 由美', '吉田 大輔', '山本 優子'];
 const PH = 'hayama24'; const PM = 'meguro62'; const PD = 'doyama227'; const PN = 'naha-asato83'; const PF = 'fvillage508'; const PO = 'ost-garden';

@@ -127,6 +127,34 @@ chk('担当の担当者（葉山）が、自物件の問い合わせを「対応
 chk('ADEXが、「未対応」に戻す→成功', !!(await callJ(adexTok, 'setInquiryStatus', { id: 'demo_q1', status: 'new', memo: '' })).result);
 const qleaTok = await signIn('qlea@primepass.test');
 chk('QLEAが、問い合わせを変更→拒否', !!(await callJ(qleaTok, 'setInquiryStatus', { id: 'demo_q1', status: 'done' })).error);
+console.log('\n■ 通知の承認フロー・予約配信');
+const qdocs = async (tok, col, field, val) => { const r = await fetch(`https://firestore.googleapis.com/v1/projects/${P}/databases/(default)/documents:runQuery`, { method: 'POST', headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ structuredQuery: { from: [{ collectionId: col }], where: { fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: { stringValue: val } } } } }) }); const j = await r.json(); return Array.isArray(j) ? j.filter((x) => x.document).map((x) => x.document) : []; };
+const T0 = `[自動テスト] 承認 ${Date.now()}`;
+chk('承認が必要な物件で、担当者が、いますぐ配信→拒否', !!(await callJ(staff2Tok, 'sendNotice', { property: 'meguro62', title: T0, body: 'x' })).error);
+const sub = await callJ(staff2Tok, 'saveNotice', { property: 'meguro62', title: T0, body: 'テスト本文', action: 'submit' });
+chk('担当者が、承認を依頼する→「承認待ち」になる', sub.result && sub.result.status === 'pending');
+chk('担当者が、自分で承認しようとする→拒否', !!(await callJ(staff2Tok, 'reviewNotice', { id: sub.result?.id, decision: 'approve' })).error);
+chk('承認待ちの間は、お客様向けのお知らせに出ない', (await qdocs(adexTok, 'notices', 'title', T0)).length === 0);
+const rj = await callJ(adexTok, 'reviewNotice', { id: sub.result?.id, decision: 'reject', note: '文面を直してください' });
+chk('ADEXが、差し戻す→「下書き」に戻る', rj.result && rj.result.status === 'draft');
+const sub2 = await callJ(staff2Tok, 'saveNotice', { id: sub.result?.id, property: 'meguro62', title: T0, body: '直しました', action: 'submit' });
+chk('担当者が、直して、もう一度依頼する→「承認待ち」', sub2.result && sub2.result.status === 'pending');
+const ap = await callJ(adexTok, 'reviewNotice', { id: sub.result?.id, decision: 'approve' });
+chk('ADEXが、承認する→配信される', ap.result && ap.result.status === 'sent');
+chk('　お知らせとして記録される', (await qdocs(adexTok, 'notices', 'title', T0)).length === 1);
+const dr = await callJ(staff1Tok, 'saveNotice', { property: 'hayama24', title: '[自動テスト] 下書き', body: 'x', action: 'draft' });
+chk('下書きを保存できる', dr.result && dr.result.status === 'draft');
+chk('他の担当者が、その下書きを取り下げる→拒否', !!(await callJ(staff2Tok, 'deleteOutbox', { id: dr.result?.id })).error);
+chk('作成者が、取り下げる→成功', !!(await callJ(staff1Tok, 'deleteOutbox', { id: dr.result?.id })).result);
+chk('過去の日時での予約→拒否', !!(await callJ(staff1Tok, 'saveNotice', { property: 'hayama24', title: '[自動テスト] 過去', body: 'x', action: 'submit', scheduleAt: Date.now() - 60000 })).error);
+const T1 = `[自動テスト] 予約 ${Date.now()}`;
+const sc = await callJ(staff1Tok, 'saveNotice', { property: 'hayama24', title: T1, body: '予約配信のテスト', action: 'submit', scheduleAt: Date.now() + 50000 });
+chk('承認不要の物件で、予約する→「予約中」になる', sc.result && sc.result.status === 'scheduled');
+chk('予約の時刻前は、お知らせに出ない', (await qdocs(adexTok, 'notices', 'title', T1)).length === 0);
+let delivered = false;
+for (let i = 0; i < 20 && !delivered; i++) { await new Promise((r) => setTimeout(r, 10000)); delivered = (await qdocs(adexTok, 'notices', 'title', T1)).length === 1; }
+chk('予約の時刻になると、自動で配信される（最大200秒待つ）', delivered);
+chk('　配信後は、予約の一覧から消える', (await qdocs(staff1Tok, 'outbox', 'property', 'hayama24')).filter((d) => d.fields.title.stringValue === T1).length === 0);
 globalThis.__cleanup = { PID, staffUid: cr.result && cr.result.uid };
 
 // 後片付け: 自動テストが作ったお知らせ・登録者を、削除する（best effort。gcloud にログイン済みであること）

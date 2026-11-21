@@ -55,6 +55,11 @@ service cloud.firestore {
                   || isStaffOf(resource.data.property);
     }
 
+    // 配信前の通知（下書き・承認待ち・予約）。ADEXと、自物件の担当者だけ
+    match /outbox/{id} {
+      allow read: if isRole('adex') || isStaffOf(resource.data.property);
+    }
+
     // 操作記録（監査ログ）はADEXのみ
     match /auditLogs/{id} {
       allow read: if isRole('adex');

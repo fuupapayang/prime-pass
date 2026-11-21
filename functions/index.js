@@ -133,38 +133,35 @@ exports.savePushToken = onCall(async (req) => {
   return { ok: true };
 });
 
-/* ---------- 4. お知らせの作成・配信 ---------- */
-exports.sendNotice = onCall(async (req) => {
-  const auth = requireAuth(req);
+/* ---------- 4. お知らせの作成・承認・配信・予約 ---------- */
+// 権限: ADEXは全物件（依頼時の代行）。物件担当者は自物件のみ。QLEAは、期間つきの代行権限がある場合のみ。ES CON本社は不可
+function canSendTo(auth, property) {
   const role = auth.token.role;
-  const property = clean(req.data && req.data.property, 20);
-  const title = clean(req.data && req.data.title, 80);
-  const body = clean(req.data && req.data.body, 300);
-  if (!(await activeProps()).includes(property) || !title || !body) throw new HttpsError('invalid-argument', '物件・タイトル・本文が必要です');
+  if (role === 'adex') return true;
+  if (role === 'staff') return Array.isArray(auth.token.properties) && auth.token.properties.includes(property);
+  if (role === 'qlea') return Number(auth.token.delegateUntil || 0) > Date.now();
+  return false;
+}
+async function needsApproval(property, role) {
+  if (role === 'adex') return false; // 承認者は、ADEX
+  const p = await db.collection('properties').doc(property).get();
+  return !!(p.exists && p.data().approvalRequired);
+}
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 
-  // 権限: ADEXは全物件（依頼時の代行）。物件担当者は自物件のみ。QLEAは、期間つきの代行権限がある場合のみ。ES CON本社は不可
-  let allowed = false;
-  if (role === 'adex') allowed = true;
-  else if (role === 'staff') allowed = Array.isArray(auth.token.properties) && auth.token.properties.includes(property);
-  else if (role === 'qlea') allowed = Number(auth.token.delegateUntil || 0) > Date.now();
-  if (!allowed) {
-    await audit(auth.uid, 'sendNotice_denied', { role, property });
-    throw new HttpsError('permission-denied', 'この役割では、この物件の通知を配信できません');
-  }
-
+// 実際の配信（お知らせの保存 → プッシュ通知 → 結果の記録）
+async function deliver({ property, title, body, actor, role }) {
   const noticeRef = await db.collection('notices').add({
-    property, title, body, createdBy: auth.uid, createdByRole: role, publishedAt: FieldValue.serverTimestamp(),
+    property, title, body, createdBy: actor, createdByRole: role, publishedAt: FieldValue.serverTimestamp(),
   });
-
   const ms = await db.collection('memberships').where('property', '==', property).get();
   const cids = [...new Set(ms.docs.map((d) => d.data().cid))];
   const tokenDocs = await Promise.all(cids.map((c) => db.collection('pushTokens').doc(c).get()));
   const tokens = [];
   const owner = {};
-  tokenDocs.forEach((s, i) => {
-    if (s.exists) (s.data().tokens || []).forEach((t) => { tokens.push(t); owner[t] = cids[i]; });
+  tokenDocs.forEach((snap, i) => {
+    if (snap.exists) (snap.data().tokens || []).forEach((t) => { tokens.push(t); owner[t] = cids[i]; });
   });
-
   let success = 0;
   let failure = 0;
   const bad = [];
@@ -185,9 +182,129 @@ exports.sendNotice = onCall(async (req) => {
   for (const t of bad) {
     await db.collection('pushTokens').doc(owner[t]).update({ tokens: FieldValue.arrayRemove(t) }).catch(() => {});
   }
-  await noticeRef.update({ stats: { members: cids.length, pushTargets: tokens.length, success, failure } });
-  await audit(auth.uid, 'sendNotice', { role, property, members: cids.length, pushTargets: tokens.length, success, failure });
-  return { noticeId: noticeRef.id, members: cids.length, pushTargets: tokens.length, success, failure };
+  const stats = { members: cids.length, pushTargets: tokens.length, success, failure };
+  await noticeRef.update({ stats });
+  await audit(actor, 'sendNotice', { role, property, ...stats });
+  return { noticeId: noticeRef.id, ...stats };
+}
+
+// いますぐ配信（承認が必要な物件では、担当者は使えない）
+exports.sendNotice = onCall(async (req) => {
+  const auth = requireAuth(req);
+  const role = auth.token.role;
+  const property = clean(req.data && req.data.property, 20);
+  const title = clean(req.data && req.data.title, 80);
+  const body = clean(req.data && req.data.body, 300);
+  if (!(await activeProps()).includes(property) || !title || !body) throw new HttpsError('invalid-argument', '物件・タイトル・本文が必要です');
+  if (!canSendTo(auth, property)) {
+    await audit(auth.uid, 'sendNotice_denied', { role, property });
+    throw new HttpsError('permission-denied', 'この役割では、この物件の通知を配信できません');
+  }
+  if (await needsApproval(property, role)) throw new HttpsError('failed-precondition', 'この物件の通知は、承認が必要です。承認を依頼してください');
+  return deliver({ property, title, body, actor: auth.uid, role });
+});
+
+// 下書き保存／承認の依頼／予約／いますぐ配信
+exports.saveNotice = onCall(async (req) => {
+  const auth = requireAuth(req);
+  const role = auth.token.role;
+  const d = req.data || {};
+  const property = clean(d.property, 20);
+  const title = clean(d.title, 30);
+  const body = clean(d.body, 80);
+  if (!(await activeProps()).includes(property) || !title || !body) throw new HttpsError('invalid-argument', '物件・タイトル（30文字まで）・本文（80文字まで）が必要です');
+  if (!canSendTo(auth, property)) {
+    await audit(auth.uid, 'saveNotice_denied', { role, property });
+    throw new HttpsError('permission-denied', 'この役割では、この物件の通知を作成できません');
+  }
+  const action = d.action === 'draft' ? 'draft' : 'submit';
+  const at = d.scheduleAt ? Number(d.scheduleAt) : null;
+  if (at && at < Date.now() + 30000) throw new HttpsError('invalid-argument', '予約の日時は、いまより先にしてください');
+  const base = { property, title, body, scheduledAt: at ? Timestamp.fromMillis(at) : null, updatedAt: FieldValue.serverTimestamp() };
+  let ref;
+  if (d.id) {
+    ref = db.collection('outbox').doc(clean(d.id, 60));
+    const cur = await ref.get();
+    if (!cur.exists) throw new HttpsError('not-found', '通知が見つかりません');
+    if (cur.data().createdBy !== auth.uid && role !== 'adex') throw new HttpsError('permission-denied', '他の方が作成した通知は、編集できません');
+  } else {
+    ref = db.collection('outbox').doc();
+    base.createdBy = auth.uid;
+    base.createdByRole = role;
+    base.createdAt = FieldValue.serverTimestamp();
+  }
+  if (action === 'draft') { await ref.set({ ...base, status: 'draft' }, { merge: true }); return { id: ref.id, status: 'draft' }; }
+  if (await needsApproval(property, role)) {
+    await ref.set({ ...base, status: 'pending', submittedAt: FieldValue.serverTimestamp(), rejectNote: '' }, { merge: true });
+    await audit(auth.uid, 'notice_submit', { role, property, id: ref.id });
+    return { id: ref.id, status: 'pending' };
+  }
+  if (at) {
+    await ref.set({ ...base, status: 'scheduled' }, { merge: true });
+    await audit(auth.uid, 'notice_schedule', { role, property, id: ref.id, at });
+    return { id: ref.id, status: 'scheduled' };
+  }
+  const r = await deliver({ property, title, body, actor: auth.uid, role });
+  await ref.delete().catch(() => {});
+  return { id: ref.id, status: 'sent', stats: r };
+});
+
+// 承認・差し戻し（承認者＝ADEX）
+exports.reviewNotice = onCall(async (req) => {
+  const auth = requireRole(req, ['adex']);
+  const id = clean(req.data && req.data.id, 60);
+  const decision = req.data && req.data.decision === 'reject' ? 'reject' : 'approve';
+  const ref = db.collection('outbox').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists || snap.data().status !== 'pending') throw new HttpsError('failed-precondition', '承認待ちの通知ではありません');
+  const n = snap.data();
+  if (decision === 'reject') {
+    await ref.update({ status: 'draft', rejectNote: clean(req.data.note, 200), updatedAt: FieldValue.serverTimestamp() });
+    await audit(auth.uid, 'notice_reject', { id, property: n.property });
+    return { status: 'draft' };
+  }
+  await audit(auth.uid, 'notice_approve', { id, property: n.property });
+  if (n.scheduledAt && n.scheduledAt.toMillis() > Date.now() + 30000) {
+    await ref.update({ status: 'scheduled', approvedBy: auth.uid, updatedAt: FieldValue.serverTimestamp() });
+    return { status: 'scheduled' };
+  }
+  const r = await deliver({ property: n.property, title: n.title, body: n.body, actor: n.createdBy, role: n.createdByRole });
+  await ref.delete().catch(() => {});
+  return { status: 'sent', stats: r };
+});
+
+// 下書き・承認待ち・予約の取り下げ
+exports.deleteOutbox = onCall(async (req) => {
+  const auth = requireAuth(req);
+  const ref = db.collection('outbox').doc(clean(req.data && req.data.id, 60));
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', '通知が見つかりません');
+  if (snap.data().createdBy !== auth.uid && auth.token.role !== 'adex') throw new HttpsError('permission-denied', '他の方が作成した通知は、取り下げられません');
+  await ref.delete();
+  await audit(auth.uid, 'notice_withdraw', { id: ref.id, property: snap.data().property });
+  return { ok: true };
+});
+
+// 予約した通知を、時刻になったら配信する（1分ごとに確認）
+exports.dispatchScheduled = onSchedule({ schedule: 'every 1 minutes', timeZone: 'Asia/Tokyo', region: 'asia-northeast1' }, async () => {
+  const snap = await db.collection('outbox').where('status', '==', 'scheduled').get();
+  for (const doc of snap.docs) {
+    const n = doc.data();
+    if (!n.scheduledAt || n.scheduledAt.toMillis() > Date.now()) continue;
+    const claimed = await db.runTransaction(async (tx) => {
+      const cur = await tx.get(doc.ref);
+      if (!cur.exists || cur.data().status !== 'scheduled') return false;
+      tx.update(doc.ref, { status: 'sending' });
+      return true;
+    });
+    if (!claimed) continue;
+    try {
+      await deliver({ property: n.property, title: n.title, body: n.body, actor: n.createdBy, role: n.createdByRole });
+      await doc.ref.delete();
+    } catch (e) {
+      await doc.ref.update({ status: 'scheduled' }).catch(() => {});
+    }
+  }
 });
 
 /* ---------- 5. 問い合わせ・来場予約 ---------- */
@@ -259,7 +376,7 @@ exports.adminSaveProperty = onCall(async (req) => {
   const exists = (await ref.get()).exists;
   const data = {
     name, region: clean(d.region, 20), area: clean(d.area, 60), kind: ['新築', '中古'].includes(d.kind) ? d.kind : '新築',
-    url: /^https:\/\//.test(clean(d.url, 300)) ? clean(d.url, 300) : '', appName: clean(d.appName, 60), status: 'active', updatedAt: FieldValue.serverTimestamp(),
+    url: /^https:\/\//.test(clean(d.url, 300)) ? clean(d.url, 300) : '', appName: clean(d.appName, 60), approvalRequired: !!d.approvalRequired, status: 'active', updatedAt: FieldValue.serverTimestamp(),
   };
   if (!exists) data.order = Date.now();
   await ref.set(data, { merge: true });

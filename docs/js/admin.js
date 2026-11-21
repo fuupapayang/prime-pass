@@ -51,7 +51,7 @@ function viewLogin(msg = '') {
 /* ---------- データ取得（役割に応じて、許される範囲だけ） ---------- */
 async function fetchScoped(col) {
   const out = [];
-  if (['adex', 'qlea', 'escon'].includes(S.claims.role) && col !== 'inquiries' && col !== 'contacts') {
+  if (['adex', 'qlea', 'escon'].includes(S.claims.role) && col !== 'inquiries' && col !== 'contacts' && col !== 'outbox') {
     (await getDocs(collection(db, col))).forEach((d) => out.push({ id: d.id, ...d.data() }));
     return out;
   }
@@ -70,6 +70,7 @@ async function loadAll() {
   d.notices = await fetchScoped('notices');
   d.events = await fetchScoped('events');
   d.contacts = can.contacts() ? await fetchScoped('contacts') : [];
+  d.outbox = can.send() ? await fetchScoped('outbox') : [];
   d.inquiries = can.inquiries() ? await fetchScoped('inquiries') : [];
   if (can.audit()) {
     d.audit = []; (await getDocs(collection(db, 'auditLogs'))).forEach((x) => d.audit.push({ id: x.id, ...x.data() }));
@@ -176,44 +177,94 @@ function detailMember() {
 }
 
 /* ---------- お知らせ配信（作成・プレビュー・結果） ---------- */
+const OB_LABEL = { scheduled: '予約中', sent: '配信済み', pending: '承認待ち', draft: '下書き' };
+const fmtDT = (ts) => { const t = ts && ts.toDate ? ts.toDate() : null; return t ? `${t.getMonth() + 1}/${t.getDate()}（${'日月火水木金土'[t.getDay()]}）${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}` : '—'; };
 function tabNotices() {
   const d = S.data;
-  const list = fd(d.notices).slice().sort((a, b) => (b.publishedAt?.toMillis?.() || 0) - (a.publishedAt?.toMillis?.() || 0));
+  const sent = fd(d.notices).slice().sort((a, b) => (b.publishedAt?.toMillis?.() || 0) - (a.publishedAt?.toMillis?.() || 0));
+  const ob = (st) => fd(d.outbox || []).filter((o) => o.status === st || (st === 'scheduled' && o.status === 'sending')).sort((a, b) => (a.scheduledAt?.toMillis?.() || 0) - (b.scheduledAt?.toMillis?.() || 0));
+  const cur = S.nstate || 'sent';
+  const counts = { scheduled: ob('scheduled').length, sent: sent.length, pending: ob('pending').length, draft: ob('draft').length };
+  const rows = cur === 'sent' ? sent : ob(cur);
+  const tag = { scheduled: '<span class="tag" style="background:#e3edf8;color:#2f6db5">予約中</span>', pending: '<span class="tag gold">承認待ち</span>', draft: '<span class="tag">下書き</span>', sent: '<span class="tag soft">配信済み</span>' }[cur];
   return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Notifications</h1>
-  <div class="seg"><button class="" disabled style="opacity:.45">予約中 0</button><button class="on">配信済み ${list.length}</button><button disabled style="opacity:.45">承認待ち 0</button><button disabled style="opacity:.45">下書き 0</button></div>
-  <div>${list.map((n) => `<div class="nrow" style="cursor:default"><div class="meta"><span class="tag soft">配信済み</span><span class="tag">${pn(n.property)}</span><span>${fmtDate(n.publishedAt)}</span></div><div class="t">${esc(n.title)}</div>${n.stats ? `<div class="xs muted" style="margin-top:4px">対象 ${n.stats.members}人／宛先 ${n.stats.pushTargets}件／到達 ${n.stats.success}件${n.stats.failure ? `／失敗 ${n.stats.failure}件` : ''}</div>` : ''}</div>`).join('') || '<div class="muted small">まだありません</div>'}</div>
-  <p class="xs muted">※予約配信・承認フロー・下書きは、これから作ります。</p>
+  <div class="seg" id="nsTabs">${['scheduled', 'sent', 'pending', 'draft'].map((k) => `<button data-v="${k}" class="${cur === k ? 'on' : ''}">${OB_LABEL[k]} ${counts[k]}</button>`).join('')}</div>
+  <div>${rows.map((n) => cur === 'sent'
+    ? `<div class="nrow" style="cursor:default"><div class="meta">${tag}<span class="tag">${pn(n.property)}</span><span>${fmtDate(n.publishedAt)}</span></div><div class="t">${esc(n.title)}</div>${n.stats ? `<div class="xs muted" style="margin-top:4px">対象 ${n.stats.members}人／宛先 ${n.stats.pushTargets}件／到達 ${n.stats.success}件${n.stats.failure ? `／失敗 ${n.stats.failure}件` : ''}</div>` : ''}</div>`
+    : `<div class="nrow" data-oid="${esc(n.id)}"><div class="meta">${tag}<span class="tag">${pn(n.property)}</span>${n.scheduledAt ? `<span>🕘 ${fmtDT(n.scheduledAt)}</span>` : ''}</div><div class="t">${esc(n.title)}</div>${n.rejectNote ? `<div class="xs" style="color:var(--danger);margin-top:4px">差し戻し：${esc(n.rejectNote)}</div>` : ''}</div>`).join('') || '<div class="muted small">該当する通知は、ありません</div>'}</div>
   <button class="btn" id="newNotice" style="margin-top:14px">＋ 通知を新しく作る</button>`;
 }
+
+function approvalOf(property) { const p = S.propDocs.find((x) => x.id === property); return !!(p && p.approvalRequired) && S.claims.role !== 'adex'; }
 function detailCompose() {
+  const o = S.detail.edit ? S.data.outbox.find((x) => x.id === S.detail.edit) : null;
+  const sc = o?.scheduledAt?.toDate ? o.scheduledAt.toDate() : null;
+  const local = sc ? new Date(sc.getTime() - sc.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
   return `<button class="btn sm ghost" id="back">‹ 通知の一覧へ</button>
   <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Compose a Letter</h1>
   ${can.send() ? '' : `<div class="banner warn">この役割（${esc(roleName())}）では、通知を配信できません。配信しようとすると、拒否されます（権限のテスト用に、送信ボタンは使えます）。</div>`}
-  <div class="field"><label>物件</label><select class="input" id="np">${PROPS.map((p) => `<option value="${esc(p)}" ${S.prop === p ? 'selected' : ''}>${pn(p)}</option>`).join('')}</select>
-    <div class="xs muted" style="margin-top:4px">※自分の担当ではない物件を選ぶと、サーバーが拒否します（権限のテスト）</div></div>
-  <div class="field"><label>タイトル（30文字まで）　<span id="ntc" class="xs">0/30</span></label><input class="input" id="nt" maxlength="30" value="限定間取りを追加しました"></div>
-  <div class="field"><label>本文（80文字まで）　<span id="nbc" class="xs">0/80</span></label><textarea class="input" id="nb" maxlength="80">限定の間取りを公開しました。アプリでご覧ください。</textarea></div>
-  <div style="background:var(--soft);padding:12px 14px;display:flex;justify-content:space-between;font-size:12px;margin-bottom:10px"><span class="muted">配信の対象</span><span id="tgt"></span></div>
+  ${o?.rejectNote ? `<div class="banner err">差し戻されました：${esc(o.rejectNote)}</div>` : ''}
+  <div class="field"><label>物件</label><select class="input" id="np">${PROPS.map((p) => `<option value="${esc(p)}" ${(o ? o.property : (S.prop !== 'all' ? S.prop : scope()[0])) === p ? 'selected' : ''}>${pn(p)}</option>`).join('')}</select>
+    <div class="xs muted" style="margin-top:4px" id="apNote"></div></div>
+  <div class="field"><label>タイトル（30文字まで）　<span id="ntc" class="xs">0/30</span></label><input class="input" id="nt" maxlength="30" value="${esc(o ? o.title : '限定間取りを追加しました')}"></div>
+  <div class="field"><label>本文（80文字まで）　<span id="nbc" class="xs">0/80</span></label><textarea class="input" id="nb" maxlength="80">${esc(o ? o.body : '限定の間取りを公開しました。アプリでご覧ください。')}</textarea></div>
+  <div style="background:var(--soft);padding:12px 14px;display:flex;justify-content:space-between;font-size:12px;margin-bottom:12px"><span class="muted">配信の対象</span><span id="tgt"></span></div>
+  <div class="field"><label>配信日時</label><div class="seg" id="when"><button data-v="now" class="${sc ? '' : 'on'}">今すぐ</button><button data-v="at" class="${sc ? 'on' : ''}">予約する</button></div><input class="input ${sc ? '' : 'hidden'}" id="at" type="datetime-local" value="${local}"></div>
   <div class="xs muted" style="margin-bottom:10px">通知の文面には、お客様の氏名などの個人情報は入りません。</div>
   <h2 class="h2">端末での見え方</h2>
   <div style="background:var(--green);padding:14px;margin-bottom:14px"><div style="background:#fff;padding:10px 12px;display:flex;gap:10px"><span style="width:30px;height:30px;background:var(--gold);color:#fff;display:grid;place-items:center;font-family:var(--serif-en)">P</span><div><div class="xs muted">PRIME PASS　今</div><div id="pvT" style="font-weight:500;font-size:13px"></div><div id="pvB" class="xs"></div></div></div></div>
-  <button class="btn" id="ns">配信する</button><div id="nr" style="margin-top:12px"></div>`;
+  <div style="display:flex;gap:10px"><button class="btn ghost" id="nd" style="flex:1">下書き保存</button><button class="btn" id="ns" style="flex:2">配信する</button></div><div id="nr" style="margin-top:12px"></div>`;
+}
+function detailReview() {
+  const o = S.data.outbox.find((x) => x.id === S.detail.id); if (!o) { S.detail = null; return tabNotices(); }
+  const by = (S.data.staff || []).find((x) => x.id === o.createdBy);
+  const ms = S.data.memberships.filter((m) => m.property === o.property);
+  const isAdex = S.claims.role === 'adex';
+  return `<button class="btn sm ghost" id="back">‹ 通知の一覧へ</button>
+  <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Review &amp; Approval</h1>
+  <div class="warnbanner"><span style="flex:none">⚠</span><div><b>案内する住戸の販売状況をご確認ください</b><br>通知の内容が、最新の販売状況と合っているか、確認してから、承認してください。</div></div>
+  <h2 class="h2" style="margin-top:20px">端末での見え方</h2>
+  <div style="background:var(--green);padding:14px;margin-bottom:14px"><div style="background:#fff;padding:10px 12px;display:flex;gap:10px"><span style="width:30px;height:30px;background:var(--gold);color:#fff;display:grid;place-items:center;font-family:var(--serif-en)">P</span><div><div class="xs muted">PRIME PASS　今</div><div style="font-weight:500;font-size:13px">${esc(o.title)}</div><div class="xs">${esc(o.body)}</div></div></div></div>
+  <div class="kv"><span>配信先</span><span>${pn(o.property)}</span></div><div class="kv"><span>対象</span><span>${new Set(ms.map((m) => m.anonId)).size}人（通知オン ${ms.filter((m) => m.pushEnabled).length}人）</span></div><div class="kv"><span>配信日時</span><span>${o.scheduledAt ? fmtDT(o.scheduledAt) : '承認後、すぐ'}</span></div>
+  <h2 class="h2" style="margin-top:20px">承認の流れ</h2>
+  <div style="display:flex;gap:8px;align-items:center;font-size:12px"><span class="tag">作成：${esc(by ? by.displayName : '担当者')}</span>›<span class="tag gold">承認：ADEX（承認待ち）</span></div>
+  ${isAdex ? `<div class="field" style="margin-top:16px"><label>差し戻すときの理由（任意）</label><input class="input" id="rnote" maxlength="200" placeholder="例：文面を直してください"></div><div style="display:flex;gap:10px"><button class="btn ghost" id="rjBtn" style="flex:1">差し戻す</button><button class="btn" id="apBtn" style="flex:2">承認して${o.scheduledAt ? '予約する' : '配信する'}</button></div>` : `<div class="banner" style="margin-top:16px">承認できるのは、ADEXだけです。承認されるまで、お待ちください。</div><button class="btn ghost" id="wdBtn">依頼を取り下げる</button>`}<div id="rvRes" style="margin-top:12px"></div>`;
 }
 function bindNotices() {
+  $$('#nsTabs button').forEach((b) => b.addEventListener('click', () => { S.nstate = b.dataset.v; render(); }));
   const nb = $('#newNotice'); if (nb) nb.addEventListener('click', () => { S.detail = { type: 'compose' }; render(); window.scrollTo(0, 0); });
+  $$('[data-oid]').forEach((r) => r.addEventListener('click', () => { const o = S.data.outbox.find((x) => x.id === r.dataset.oid); S.detail = o.status === 'pending' ? { type: 'review', id: o.id } : { type: 'compose', edit: o.id }; render(); window.scrollTo(0, 0); }));
 }
 function bindCompose() {
   const b = $('#ns'); if (!b) return;
-  const sync = () => { $('#ntc').textContent = `${$('#nt').value.length}/30`; $('#nbc').textContent = `${$('#nb').value.length}/80`; $('#pvT').textContent = $('#nt').value; $('#pvB').textContent = $('#nb').value; const ms = S.data.memberships.filter((m) => m.property === $('#np').value); $('#tgt').textContent = `${new Set(ms.map((m) => m.anonId)).size}人（通知オン ${ms.filter((m) => m.pushEnabled).length}人）`; };
-  $('#nt').addEventListener('input', sync); $('#nb').addEventListener('input', sync); $('#np').addEventListener('change', sync); sync();
-  b.addEventListener('click', async () => {
-    b.disabled = true; $('#nr').innerHTML = '';
+  let when = $('#when .on')?.dataset.v || 'now';
+  const sync = () => {
+    $('#ntc').textContent = `${$('#nt').value.length}/30`; $('#nbc').textContent = `${$('#nb').value.length}/80`; $('#pvT').textContent = $('#nt').value; $('#pvB').textContent = $('#nb').value;
+    const ms = S.data.memberships.filter((m) => m.property === $('#np').value); $('#tgt').textContent = `${new Set(ms.map((m) => m.anonId)).size}人（通知オン ${ms.filter((m) => m.pushEnabled).length}人）`;
+    const ap = approvalOf($('#np').value); $('#apNote').textContent = ap ? 'この物件の通知は、ADEXの承認が必要です。「承認を依頼する」を押してください。' : '※自分の担当ではない物件を選ぶと、サーバーが拒否します（権限のテスト）';
+    b.textContent = ap ? '承認を依頼する' : when === 'at' ? '予約する' : '配信する';
+  };
+  $('#nt').addEventListener('input', sync); $('#nb').addEventListener('input', sync); $('#np').addEventListener('change', sync);
+  $$('#when button').forEach((x) => x.addEventListener('click', () => { $$('#when button').forEach((y) => y.classList.remove('on')); x.classList.add('on'); when = x.dataset.v; $('#at').classList.toggle('hidden', when !== 'at'); sync(); }));
+  sync();
+  const run = (action) => async () => {
+    const at = when === 'at' && $('#at').value ? new Date($('#at').value).getTime() : null;
+    if (when === 'at' && !at) { $('#nr').innerHTML = '<div class="banner err">予約する日時を入れてください</div>'; return; }
+    b.disabled = true; $('#nd').disabled = true; $('#nr').innerHTML = '';
     try {
-      const r = await call('sendNotice')({ property: $('#np').value, title: $('#nt').value, body: $('#nb').value });
-      await loadAll(); S.detail = null; S.tab = 'notices'; render();
-      $('#main').insertAdjacentHTML('afterbegin', `<div class="banner ok">配信しました。対象の登録者 ${r.data.members}人／通知の宛先 ${r.data.pushTargets}件（成功 ${r.data.success}・失敗 ${r.data.failure}）</div>`);
-    } catch (e) { $('#nr').innerHTML = `<div class="banner err">拒否されました／失敗しました：${esc(e.message)}</div>`; b.disabled = false; }
-  });
+      const r = await call('saveNotice')({ id: S.detail.edit, property: $('#np').value, title: $('#nt').value, body: $('#nb').value, scheduleAt: at, action });
+      await loadAll(); S.detail = null; S.tab = 'notices'; S.nstate = { draft: 'draft', pending: 'pending', scheduled: 'scheduled', sent: 'sent' }[r.data.status] || 'sent'; render();
+      const st = r.data.status; const msg = { draft: '下書きを保存しました', pending: '承認を依頼しました。ADEXの承認後に、配信されます', scheduled: '予約しました', sent: `配信しました。対象の登録者 ${r.data.stats?.members}人／通知の宛先 ${r.data.stats?.pushTargets}件（成功 ${r.data.stats?.success}・失敗 ${r.data.stats?.failure}）` }[st];
+      $('#main').insertAdjacentHTML('afterbegin', `<div class="banner ok">${msg}</div>`);
+    } catch (e) { $('#nr').innerHTML = `<div class="banner err">拒否されました／失敗しました：${esc(e.message)}</div>`; b.disabled = false; $('#nd').disabled = false; }
+  };
+  b.addEventListener('click', run('submit')); $('#nd').addEventListener('click', run('draft'));
+}
+function bindReview() {
+  const done = async (fn, msg) => { try { await fn(); await loadAll(); S.detail = null; S.nstate = 'sent'; render(); $('#main').insertAdjacentHTML('afterbegin', `<div class="banner ok">${msg}</div>`); } catch (e) { $('#rvRes').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; } };
+  const ap = $('#apBtn'); if (ap) ap.addEventListener('click', () => { ap.disabled = true; done(() => call('reviewNotice')({ id: S.detail.id, decision: 'approve' }), '承認しました'); });
+  const rj = $('#rjBtn'); if (rj) rj.addEventListener('click', () => { if (!confirm('差し戻します。よろしいですか？')) return; S.nstate = 'draft'; done(() => call('reviewNotice')({ id: S.detail.id, decision: 'reject', note: $('#rnote').value }), '差し戻しました'); });
+  const wd = $('#wdBtn'); if (wd) wd.addEventListener('click', () => { if (!confirm('依頼を取り下げます。よろしいですか？')) return; done(() => call('deleteOutbox')({ id: S.detail.id }), '取り下げました'); });
 }
 
 /* ---------- 問い合わせ（状況別・詳細・対応メモ） ---------- */
@@ -287,7 +338,7 @@ function tabEvents() {
   ${rows.map((e) => `<tr><td>${fmtDate(e.ts)}</td><td class="mono">${esc(e.anonId)}</td><td>${pn(e.property)}</td><td>${esc(lab[e.type] || e.type)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">まだありません</td></tr>'}</tbody></table></div>`;
 }
 
-const AUDIT_JA = { sendNotice: ['通知を配信', '配信', '#2e7d5b'], sendNotice_denied: ['通知の配信を拒否', '権限', '#b3402f'], intake: ['登録フォームから登録', '登録', '#2f6db5'], property_create: ['物件を登録', '物件', '#997544'], property_update: ['物件を更新', '物件', '#997544'], property_archive: ['物件の掲載を停止', '物件', '#b3402f'], property_restore: ['物件の掲載を再開', '物件', '#2e7d5b'], staff_create: ['担当者を発行', '権限', '#b3402f'], staff_update: ['担当物件を変更', '権限', '#b3402f'], staff_disable: ['担当者を停止', '権限', '#b3402f'], staff_enable: ['担当者を再開', '権限', '#2e7d5b'], inquiry_status: ['問い合わせの状況を変更', '対応', '#2f6db5'] };
+const AUDIT_JA = { sendNotice: ['通知を配信', '配信', '#2e7d5b'], sendNotice_denied: ['通知の配信を拒否', '権限', '#b3402f'], intake: ['登録フォームから登録', '登録', '#2f6db5'], property_create: ['物件を登録', '物件', '#997544'], property_update: ['物件を更新', '物件', '#997544'], property_archive: ['物件の掲載を停止', '物件', '#b3402f'], property_restore: ['物件の掲載を再開', '物件', '#2e7d5b'], staff_create: ['担当者を発行', '権限', '#b3402f'], staff_update: ['担当物件を変更', '権限', '#b3402f'], staff_disable: ['担当者を停止', '権限', '#b3402f'], staff_enable: ['担当者を再開', '権限', '#2e7d5b'], inquiry_status: ['問い合わせの状況を変更', '対応', '#2f6db5'], notice_submit: ['通知の承認を依頼', '承認', '#997544'], notice_approve: ['通知を承認', '承認', '#2e7d5b'], notice_reject: ['通知を差し戻し', '承認', '#b3402f'], notice_schedule: ['通知を予約', '配信', '#2f6db5'], notice_withdraw: ['通知を取り下げ', '承認', '#7d7b6e'], saveNotice_denied: ['通知の作成を拒否', '権限', '#b3402f'] };
 function tabAdmin() {
   const d = S.data;
   return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:12px">Audit Trail</h1>
@@ -317,6 +368,7 @@ function detailProperty() {
     <div class="field"><label>種別</label><select class="input" id="pfKind"><option ${p?.kind !== '中古' ? 'selected' : ''}>新築</option><option ${p?.kind === '中古' ? 'selected' : ''}>中古</option></select></div>
     <div class="field"><label>公式サイトURL（https://）</label><input class="input" id="pfUrl" maxlength="300" placeholder="https://" value="${esc(p?.url || '')}"></div>
     <div class="field"><label>アプリ内の表示名（任意）</label><input class="input" id="pfApp" maxlength="60" value="${esc(p?.appName || '')}"></div>
+    <label class="small" style="display:flex;gap:10px;align-items:flex-start;margin:6px 0 16px"><input type="checkbox" id="pfAp" ${p?.approvalRequired ? 'checked' : ''} style="margin-top:4px"><span>通知の公開前に、責任者（ADEX）の承認を必要にする<br><span class="xs muted">オンにすると、物件担当者の通知は「承認待ち」になり、ADEXが承認すると配信されます。</span></span></label>
     <button class="btn" id="pfSave">${p ? '保存する' : 'この内容で登録する'}</button><div id="pfRes" style="margin-top:12px"></div>`;
 }
 function bindProperties() {
@@ -327,7 +379,7 @@ function bindProperties() {
   if (f('pfSave')) f('pfSave').addEventListener('click', async (e) => {
     e.target.disabled = true; f('pfRes').innerHTML = '';
     try {
-      const r = await call('adminSaveProperty')({ id: f('pfId').value.trim(), name: f('pfName').value, region: f('pfRegion').value, area: f('pfArea').value, kind: f('pfKind').value, url: f('pfUrl').value, appName: f('pfApp').value });
+      const r = await call('adminSaveProperty')({ id: f('pfId').value.trim(), name: f('pfName').value, region: f('pfRegion').value, area: f('pfArea').value, kind: f('pfKind').value, url: f('pfUrl').value, appName: f('pfApp').value, approvalRequired: f('pfAp').checked });
       await loadAll(); S.detail = null; render(); $('#main').insertAdjacentHTML('afterbegin', `<div class="banner ok">${r.data.created ? '物件を登録しました' : '物件を更新しました'}</div>`);
     } catch (err) { f('pfRes').innerHTML = `<div class="banner err">${esc(err.message)}</div>`; e.target.disabled = false; }
   });
@@ -395,7 +447,7 @@ function bindStaff() {
 
 function render(full = true) {
   const views = { overview: tabOverview, members: tabMembers, notices: tabNotices, inquiries: tabInquiries, reservations: tabReservations, events: tabEvents, admin: tabAdmin, properties: tabProperties, staff: tabStaff, menu: tabMenu };
-  const dv = { member: detailMember, inq: detailInquiry, compose: detailCompose, property: detailProperty, newstaff: detailStaff };
+  const dv = { member: detailMember, inq: detailInquiry, compose: detailCompose, review: detailReview, property: detailProperty, newstaff: detailStaff };
   const inner = S.detail ? dv[S.detail.type]() : views[S.tab]();
   shell(inner);
   const back = $('#back'); if (back) back.addEventListener('click', () => { S.detail = null; render(); });
@@ -404,6 +456,7 @@ function render(full = true) {
   if (S.detail) {
     if (S.detail.type === 'inq') bindInquiryDetail();
     if (S.detail.type === 'compose') bindCompose();
+    if (S.detail.type === 'review') bindReview();
     if (S.detail.type === 'property') bindProperties();
     if (S.detail.type === 'newstaff') bindStaff();
     return;
