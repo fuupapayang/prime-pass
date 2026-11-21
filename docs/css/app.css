@@ -1,0 +1,148 @@
+/* PRIME PASS — Editorial design (Figma UI03 "The Art of Belonging" をもとに作成) */
+:root {
+  --paper: #f4ede1;
+  --white: #fcf9f3;
+  --green: #193a2b;
+  --green-2: #264a39;
+  --ink: #242f26;
+  --muted: #7d7b6e;
+  --gold: #a58a58;
+  --line: #d8d1c3;
+  --soft: #e6e8dd;
+  --danger: #a3473a;
+  --ok: #42694c;
+  --warn: #997544;
+  --serif-en: 'Cormorant Garamond', 'Shippori Mincho', serif;
+  --serif-jp: 'Shippori Mincho', 'Cormorant Garamond', serif;
+  --sans: 'Noto Sans JP', system-ui, -apple-system, 'Hiragino Sans', sans-serif;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+button { font-family: inherit; }
+.app { max-width: 480px; margin: 0 auto; min-height: 100vh; position: relative; padding-bottom: 88px; background: var(--paper); }
+.hidden { display: none !important; }
+
+/* ---------- 見出し ---------- */
+.eyebrow { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); font-weight: 500; margin: 0 0 6px; }
+.display { font-family: var(--serif-en); font-weight: 400; font-size: 36px; line-height: 1.15; color: var(--green); margin: 0; letter-spacing: 0; }
+.display-jp { font-family: var(--serif-jp); font-weight: 500; font-size: 22px; line-height: 1.5; color: var(--green); margin: 0; }
+.h2 { font-family: var(--serif-jp); font-weight: 500; font-size: 17px; color: var(--green); margin: 0 0 10px; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.xs { font-size: 11px; }
+
+/* ---------- 画面の骨格 ---------- */
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px 8px; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--serif-en); font-size: 20px; letter-spacing: 0.14em; color: var(--green); font-weight: 600; }
+.brand .mark { width: 26px; height: 26px; background: var(--green); color: var(--paper); display: grid; place-items: center; font-size: 15px; letter-spacing: 0; font-weight: 600; }
+.icon-btn { background: none; border: 0; color: var(--green); width: 40px; height: 40px; display: grid; place-items: center; position: relative; cursor: pointer; }
+.icon-btn .dot { position: absolute; top: 8px; right: 9px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+.section { padding: 8px 22px 22px; }
+.hr { height: 1px; background: var(--line); border: 0; margin: 16px 0; }
+
+/* ---------- ボタン・入力 ---------- */
+.btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 50px; border: 1px solid var(--green); background: var(--green); color: var(--white); font-size: 14px; font-weight: 500; letter-spacing: 0.08em; cursor: pointer; border-radius: 2px; text-decoration: none; transition: opacity .15s; }
+.btn:active { opacity: .85; }
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
+.btn.ghost { background: var(--white); color: var(--green); }
+.btn.sm { height: 38px; width: auto; padding: 0 16px; font-size: 12px; }
+.btn.danger { background: var(--danger); border-color: var(--danger); }
+.field { margin: 0 0 14px; }
+.field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+.input, select.input, textarea.input { width: 100%; padding: 12px 14px; border: 1px solid var(--line); background: var(--white); color: var(--ink); font-size: 15px; font-family: inherit; border-radius: 2px; outline: none; }
+.input:focus { border-color: var(--green); }
+textarea.input { min-height: 96px; resize: vertical; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { padding: 7px 14px; border: 1px solid var(--line); background: var(--white); font-size: 13px; border-radius: 99px; cursor: pointer; color: var(--ink); font-family: inherit; }
+.chip.on { background: var(--green); color: var(--white); border-color: var(--green); }
+.tag { display: inline-block; font-size: 10px; letter-spacing: .08em; padding: 2px 8px; background: var(--soft); color: var(--green); border-radius: 2px; }
+.tag.gold { background: #efe6d2; color: var(--warn); }
+.tag.red { background: #f0ddd8; color: var(--danger); }
+.tag.dark { background: var(--green); color: var(--white); }
+
+/* ---------- カード・リスト ---------- */
+.card { background: var(--white); border: 1px solid var(--line); padding: 16px; }
+.list { border-top: 1px solid var(--line); }
+.list-item { display: flex; gap: 10px; align-items: flex-start; padding: 14px 2px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.list-item .t { font-size: 14px; font-weight: 500; line-height: 1.55; }
+.list-item .d { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.list-item .reddot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); margin-top: 9px; flex: none; }
+.list-item .chev { margin-left: auto; color: var(--muted); align-self: center; }
+.notice-note { background: var(--soft); padding: 12px 14px; font-size: 11px; line-height: 1.7; color: #55594e; margin-top: 18px; }
+
+/* ---------- ヒーロー ---------- */
+.hero { position: relative; height: 300px; margin: 10px 22px 22px; background: linear-gradient(160deg, #0f2a1e 0%, #1c3d2d 45%, #36533f 100%); color: var(--white); overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 22px; }
+.hero::before { content: 'PRIME PASS'; position: absolute; top: 10px; right: -6px; font-family: var(--serif-en); font-size: 88px; letter-spacing: .04em; color: rgba(255,255,255,.05); line-height: 1; white-space: nowrap; }
+.hero::after { content: ''; position: absolute; inset: 0; background: radial-gradient(120% 70% at 20% 0%, rgba(165,138,88,.28), transparent 60%); pointer-events: none; }
+.hero > * { position: relative; z-index: 1; }
+.hero .k { font-size: 10px; letter-spacing: .22em; color: #d8c28f; margin-bottom: 8px; }
+.hero .name { font-family: var(--serif-jp); font-size: 26px; font-weight: 500; line-height: 1.4; }
+.hero .sub { font-size: 12px; color: rgba(255,255,255,.78); margin-top: 8px; line-height: 1.7; }
+
+/* ---------- 物件カード ---------- */
+.prop { margin: 0 0 26px; }
+.prop .art { height: 190px; position: relative; display: flex; align-items: flex-end; padding: 12px; color: rgba(255,255,255,.9); font-size: 10px; letter-spacing: .2em; }
+.prop .art.a { background: linear-gradient(150deg, #2d4a3b, #6b7f68 60%, #b3a98e); }
+.prop .art.b { background: linear-gradient(150deg, #3b3a36, #6e655a 55%, #b9a98c); }
+.prop .art.c { background: linear-gradient(150deg, #2c2a44, #5c5878 55%, #c3a9a0); }
+.prop .check { position: absolute; top: 10px; right: 10px; width: 24px; height: 24px; border: 1px solid #fff; background: rgba(255,255,255,.2); display: grid; place-items: center; color: #fff; }
+.prop .check.on { background: var(--green); }
+.prop .ttl { font-family: var(--serif-jp); font-size: 18px; margin: 10px 0 2px; color: var(--green); }
+
+/* ---------- 下部メニュー ---------- */
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; max-width: 480px; margin: 0 auto; background: var(--white); border-top: 1px solid var(--line); display: flex; padding: 6px 0 calc(8px + env(safe-area-inset-bottom)); z-index: 20; }
+.tabbar a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; text-decoration: none; color: var(--muted); padding: 4px 0; }
+.tabbar a.on { color: var(--green); font-weight: 700; }
+.tabbar svg { width: 21px; height: 21px; }
+
+/* ---------- インストール案内・メッセージ ---------- */
+.steps { counter-reset: s; margin: 0; padding: 0; list-style: none; }
+.steps li { counter-increment: s; display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.steps li::before { content: counter(s); flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--green); color: #fff; font-size: 12px; display: grid; place-items: center; margin-top: 1px; }
+.banner { padding: 12px 14px; font-size: 12px; line-height: 1.7; margin: 0 0 14px; border: 1px solid var(--line); background: var(--white); }
+.banner.ok { border-color: #b7cdb9; background: #e8efe6; color: var(--ok); }
+.banner.err { border-color: #e0b9b1; background: #f6e6e2; color: var(--danger); }
+.banner.warn { border-color: #e3cfa5; background: #f6edd9; color: var(--warn); }
+.center { text-align: center; }
+.stack > * + * { margin-top: 12px; }
+.toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); background: var(--green); color: #fff; padding: 11px 18px; font-size: 13px; z-index: 40; max-width: 88%; text-align: center; }
+.calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; font-size: 13px; }
+.calendar .dow { font-size: 10px; color: var(--muted); padding: 4px 0; }
+.calendar button { border: 0; background: none; height: 36px; font-family: inherit; font-size: 13px; color: var(--ink); cursor: pointer; border-radius: 2px; }
+.calendar button.on { background: var(--green); color: #fff; }
+.calendar button[disabled] { color: #c2bdb0; cursor: default; }
+
+/* ---------- 管理画面 ---------- */
+.admin { max-width: 980px; margin: 0 auto; padding: 0 20px 60px; }
+.admin-head { display: flex; align-items: center; justify-content: space-between; padding: 20px 0 10px; gap: 12px; flex-wrap: wrap; }
+.role-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; background: var(--green); color: #fff; font-size: 12px; letter-spacing: .06em; }
+.role-pill b { font-weight: 700; }
+.navtabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin: 10px 0 20px; }
+.navtabs button { background: none; border: 0; padding: 10px 14px; font-size: 13px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-family: inherit; }
+.navtabs button.on { color: var(--green); border-bottom-color: var(--green); font-weight: 700; }
+.grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.stat { background: var(--white); border: 1px solid var(--line); padding: 16px; }
+.stat .n { font-family: var(--serif-en); font-size: 38px; color: var(--green); line-height: 1.1; }
+.stat .l { font-size: 12px; color: var(--muted); }
+table.t { width: 100%; border-collapse: collapse; background: var(--white); border: 1px solid var(--line); font-size: 13px; }
+table.t th { text-align: left; font-weight: 500; font-size: 11px; color: var(--muted); padding: 10px 12px; background: #efe8da; border-bottom: 1px solid var(--line); letter-spacing: .06em; }
+table.t td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.scroll-x { overflow-x: auto; }
+.matrix td, .matrix th { text-align: center; }
+.matrix td:first-child, .matrix th:first-child { text-align: left; }
+.sym { font-weight: 700; }
+.sym.ok { color: var(--ok); } .sym.no { color: #b2ad9f; } .sym.cond { color: #2f6db5; } .sym.view { color: var(--warn); }
+.login-box { max-width: 420px; margin: 8vh auto 0; background: var(--white); border: 1px solid var(--line); padding: 32px 28px; }
+.pill-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 0; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+@media (max-width: 560px) { .admin { padding: 0 14px 60px; } table.t { font-size: 12px; } }

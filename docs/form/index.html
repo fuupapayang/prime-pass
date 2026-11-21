@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>会員登録フォーム（サンプル）</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&family=Shippori+Mincho:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+  <div class="app" style="padding-bottom:40px">
+    <div class="topbar"><div class="brand" style="letter-spacing:.06em;font-size:16px">ES CON PRIME MEMBERSHIP</div></div>
+    <div class="section" id="formView">
+      <div class="banner warn">これは、ES CON様のエントリーフォームの代わりの<b>サンプル</b>です。テスト環境のため、<b>架空の情報</b>を入力してください。</div>
+      <p class="eyebrow">Entry form</p>
+      <h1 class="display-jp" style="margin-bottom:16px">会員登録（資料請求・来場予約）</h1>
+      <form id="f" novalidate>
+        <div class="field"><label>お名前</label><input class="input" id="name" autocomplete="name" placeholder="山田 太郎" required></div>
+        <div class="field"><label>メールアドレス</label><input class="input" id="email" type="email" autocomplete="email" placeholder="taro.yamada@example.com" required></div>
+        <div class="field"><label>電話番号</label><input class="input" id="phone" type="tel" autocomplete="tel" placeholder="090-0000-0000" required></div>
+        <div class="field"><label>ご関心のあるプロジェクト</label>
+          <select class="input" id="property"><option value="a">レジェイド○○（仮）</option><option value="b">△△タワー（仮）</option><option value="c">□□ヒルズ（仮）</option></select></div>
+        <div class="field"><label>フォームの種類</label>
+          <select class="input" id="formType"><option value="entry">会員登録</option><option value="document">資料請求</option><option value="visit">来場予約</option></select></div>
+        <label class="small" style="display:flex;gap:10px;align-items:flex-start;margin:6px 0 16px"><input type="checkbox" id="consent" style="margin-top:5px"><span>個人情報の取り扱いに同意します。ご登録のお名前・メール・電話番号は、アプリ「PRIME PASS」へ引き継がれ、情報のご案内・通知に利用されます。</span></label>
+        <button class="btn" id="submit" type="submit">登録する</button>
+        <button class="btn ghost" id="fill" type="button" style="margin-top:10px">架空の情報を入力する（テスト用）</button>
+        <div id="err" style="margin-top:14px"></div>
+      </form>
+    </div>
+    <div class="section hidden center" id="thanks" style="padding-top:18vh">
+      <p class="eyebrow">Thank you</p>
+      <h1 class="display-jp">ご登録ありがとうございました</h1>
+      <p class="muted" style="margin:14px 0 24px"><span id="count">5</span>秒後に、アプリ「PRIME PASS」の案内へ、自動で移動します。</p>
+      <a class="btn" id="go" href="#">いますぐ移動する</a>
+      <p class="xs muted" style="margin-top:12px">移動しない場合は、上のボタンを押してください。</p>
+    </div>
+  </div>
+  <script type="module">
+    import { INTAKE_URL } from '../js/config.js';
+    const $ = (s) => document.querySelector(s);
+    const rnd = () => String(Math.floor(1000 + Math.random() * 9000));
+    $('#fill').addEventListener('click', () => {
+      const n = rnd();
+      $('#name').value = '山田 太郎'; $('#email').value = `taro.${n}@example.com`; $('#phone').value = `090-0000-${n}`; $('#consent').checked = true;
+    });
+    $('#f').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = { name: $('#name').value, email: $('#email').value, phone: $('#phone').value, property: $('#property').value, formType: $('#formType').value, consent: $('#consent').checked };
+      $('#err').innerHTML = ''; $('#submit').disabled = true;
+      try {
+        const r = await fetch(INTAKE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!r.ok) throw new Error(r.status === 400 ? '入力内容を確認してください（同意のチェックも必要です）' : '送信できませんでした（' + r.status + '）');
+        const { token } = await r.json();
+        const dest = '../?t=' + encodeURIComponent(token); // 個人情報は載せず、使い捨ての一時番号だけを付ける
+        $('#formView').classList.add('hidden'); $('#thanks').classList.remove('hidden');
+        $('#go').href = dest;
+        let c = 5; const iv = setInterval(() => { c -= 1; $('#count').textContent = c; if (c <= 0) { clearInterval(iv); location.href = dest; } }, 1000);
+      } catch (err) {
+        $('#err').innerHTML = '<div class="banner err">' + String(err.message).replace(/[<>&]/g, '') + '</div>'; $('#submit').disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

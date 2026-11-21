@@ -1,0 +1,68 @@
+rules_version = '2';
+// PRIME PASS (staging) Firestore rules
+// 役割: adex / qlea / escon / staff(物件担当者, properties=[...]) / member(お客様)
+// 個人情報は contacts のみ。QLEA・ES CON本社は読めない。物件担当者は自物件のみ。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function role() { return request.auth.token.role; }
+    function isRole(r) { return signedIn() && role() == r; }
+    function isStaffOf(p) { return isRole('staff') && p in request.auth.token.properties; }
+
+    // 物件の基本情報は、ログイン済みなら誰でも読める（公開情報）
+    match /properties/{p} {
+      allow read: if signedIn();
+    }
+
+    // 匿名の会員情報（名前・メール・電話は含まない）
+    match /memberships/{id} {
+      allow read: if isRole('adex') || isRole('qlea') || isRole('escon')
+                  || isStaffOf(resource.data.property)
+                  || (isRole('member') && resource.data.cid == request.auth.uid);
+    }
+
+    // 個人情報（名前・メール・電話）。ADEXと、自物件の担当者と、本人だけ
+    match /contacts/{id} {
+      allow read: if isRole('adex')
+                  || isStaffOf(resource.data.property)
+                  || (isRole('member') && resource.data.cid == request.auth.uid);
+    }
+
+    // お知らせ。会員は、自分が登録した物件のものだけ
+    match /notices/{id} {
+      allow read: if isRole('adex') || isRole('qlea') || isRole('escon')
+                  || isStaffOf(resource.data.property)
+                  || (isRole('member')
+                      && exists(/databases/$(database)/documents/memberships/$(request.auth.uid + '_' + resource.data.property)));
+    }
+
+    // 問い合わせ・来場予約。ADEXと、自物件の担当者と、本人だけ（QLEA・本社は不可）
+    match /inquiries/{id} {
+      allow read: if isRole('adex')
+                  || isStaffOf(resource.data.property)
+                  || (isRole('member') && resource.data.cid == request.auth.uid);
+    }
+
+    // 行動ログ（匿名IDのみ）
+    match /events/{id} {
+      allow read: if isRole('adex') || isRole('qlea') || isRole('escon')
+                  || isStaffOf(resource.data.property);
+    }
+
+    // 操作記録（監査ログ）はADEXのみ
+    match /auditLogs/{id} {
+      allow read: if isRole('adex');
+    }
+
+    // 担当者一覧はADEXと本人のみ
+    match /staff/{uid} {
+      allow read: if isRole('adex') || (signedIn() && request.auth.uid == uid);
+    }
+
+    // それ以外（tokens, intakeIndex, pushTokens など）は、すべて拒否。書き込みは、サーバーのみ
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
