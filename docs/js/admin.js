@@ -11,7 +11,7 @@ let PNAMES = {};
 const REGIONS = ['首都圏', '関西', '西日本', '九州・沖縄', '北海道', '中部', '海外'];
 const ROLE_LABEL = { adex: 'ADEX', qlea: 'QLEA', escon: 'ES CON本社', staff: '物件担当者' };
 const S = { claims: null, user: null, tab: 'overview', data: {}, propDocs: [], assets: {}, prop: 'all', detail: null, q: '', mfilter: 'all', istatus: 'new' };
-const imgOf = (id) => S.assets[assetKey(id)] || '';
+const imgOf = (id) => (S.propDocs.find((p) => p.id === id) || {}).imageUrl || S.assets[assetKey(id)] || '';
 
 const roleName = () => {
   const c = S.claims; if (!c) return '';
@@ -338,7 +338,7 @@ function tabEvents() {
   ${rows.map((e) => `<tr><td>${fmtDate(e.ts)}</td><td class="mono">${esc(e.anonId)}</td><td>${pn(e.property)}</td><td>${esc(lab[e.type] || e.type)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">まだありません</td></tr>'}</tbody></table></div>`;
 }
 
-const AUDIT_JA = { sendNotice: ['通知を配信', '配信', '#2e7d5b'], sendNotice_denied: ['通知の配信を拒否', '権限', '#b3402f'], intake: ['登録フォームから登録', '登録', '#2f6db5'], property_create: ['物件を登録', '物件', '#997544'], property_update: ['物件を更新', '物件', '#997544'], property_archive: ['物件の掲載を停止', '物件', '#b3402f'], property_restore: ['物件の掲載を再開', '物件', '#2e7d5b'], staff_create: ['担当者を発行', '権限', '#b3402f'], staff_update: ['担当物件を変更', '権限', '#b3402f'], staff_disable: ['担当者を停止', '権限', '#b3402f'], staff_enable: ['担当者を再開', '権限', '#2e7d5b'], inquiry_status: ['問い合わせの状況を変更', '対応', '#2f6db5'], notice_submit: ['通知の承認を依頼', '承認', '#997544'], notice_approve: ['通知を承認', '承認', '#2e7d5b'], notice_reject: ['通知を差し戻し', '承認', '#b3402f'], notice_schedule: ['通知を予約', '配信', '#2f6db5'], notice_withdraw: ['通知を取り下げ', '承認', '#7d7b6e'], saveNotice_denied: ['通知の作成を拒否', '権限', '#b3402f'] };
+const AUDIT_JA = { sendNotice: ['通知を配信', '配信', '#2e7d5b'], sendNotice_denied: ['通知の配信を拒否', '権限', '#b3402f'], intake: ['登録フォームから登録', '登録', '#2f6db5'], property_create: ['物件を登録', '物件', '#997544'], property_update: ['物件を更新', '物件', '#997544'], property_archive: ['物件の掲載を停止', '物件', '#b3402f'], property_restore: ['物件の掲載を再開', '物件', '#2e7d5b'], staff_create: ['担当者を発行', '権限', '#b3402f'], staff_update: ['担当物件を変更', '権限', '#b3402f'], staff_disable: ['担当者を停止', '権限', '#b3402f'], staff_enable: ['担当者を再開', '権限', '#2e7d5b'], inquiry_status: ['問い合わせの状況を変更', '対応', '#2f6db5'], notice_submit: ['通知の承認を依頼', '承認', '#997544'], notice_approve: ['通知を承認', '承認', '#2e7d5b'], notice_reject: ['通知を差し戻し', '承認', '#b3402f'], notice_schedule: ['通知を予約', '配信', '#2f6db5'], notice_withdraw: ['通知を取り下げ', '承認', '#7d7b6e'], property_image_set: ['物件の画像を登録', '物件', '#997544'], property_image_remove: ['物件の画像を外す', '物件', '#997544'], saveNotice_denied: ['通知の作成を拒否', '権限', '#b3402f'] };
 function tabAdmin() {
   const d = S.data;
   return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:12px">Audit Trail</h1>
@@ -368,19 +368,42 @@ function detailProperty() {
     <div class="field"><label>種別</label><select class="input" id="pfKind"><option ${p?.kind !== '中古' ? 'selected' : ''}>新築</option><option ${p?.kind === '中古' ? 'selected' : ''}>中古</option></select></div>
     <div class="field"><label>公式サイトURL（https://）</label><input class="input" id="pfUrl" maxlength="300" placeholder="https://" value="${esc(p?.url || '')}"></div>
     <div class="field"><label>アプリ内の表示名（任意）</label><input class="input" id="pfApp" maxlength="60" value="${esc(p?.appName || '')}"></div>
+    <div class="field"><label>物件の画像（JPEG・PNG・WebP。大きい画像は、自動で縮小します）</label>
+      <div style="display:flex;gap:12px;align-items:center"><div id="pfPrev" style="width:112px;height:72px;flex:none;background:#cfc8b8 center/cover no-repeat;${p && imgOf(p.id) ? `background-image:url('${esc(imgOf(p.id))}')` : ''}"></div>
+      <div><input type="file" id="pfImg" accept="image/jpeg,image/png,image/webp" style="font-size:12px;max-width:200px">${p?.imageUrl ? '<br><button class="btn sm ghost" id="pfImgDel" type="button" style="margin-top:8px">登録した画像を外す</button>' : ''}<div class="xs muted" id="pfImgNote" style="margin-top:6px">${p ? '' : '画像は、物件を登録したあとに、アップロードされます。'}</div></div></div></div>
     <label class="small" style="display:flex;gap:10px;align-items:flex-start;margin:6px 0 16px"><input type="checkbox" id="pfAp" ${p?.approvalRequired ? 'checked' : ''} style="margin-top:4px"><span>通知の公開前に、責任者（ADEX）の承認を必要にする<br><span class="xs muted">オンにすると、物件担当者の通知は「承認待ち」になり、ADEXが承認すると配信されます。</span></span></label>
     <button class="btn" id="pfSave">${p ? '保存する' : 'この内容で登録する'}</button><div id="pfRes" style="margin-top:12px"></div>`;
+}
+async function resizeImage(file, max = 1200) {
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  const url = c.toDataURL('image/jpeg', 0.85);
+  return { data: url.split(',')[1], contentType: 'image/jpeg', preview: url };
 }
 function bindProperties() {
   const f = (id) => $('#' + id);
   $$('#pfTabs button').forEach((b) => b.addEventListener('click', () => { S.propFilter = b.dataset.v; render(); }));
   const np = $('#newProp'); if (np) np.addEventListener('click', () => { S.detail = { type: 'property' }; render(); window.scrollTo(0, 0); });
   $$('[data-edit]').forEach((b) => b.addEventListener('click', () => { S.detail = { type: 'property', edit: b.dataset.edit }; render(); window.scrollTo(0, 0); }));
+  S.pendingImg = null;
+  if (f('pfImg')) f('pfImg').addEventListener('change', async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    try { S.pendingImg = await resizeImage(file); f('pfPrev').style.backgroundImage = `url('${S.pendingImg.preview}')`; f('pfImgNote').textContent = '保存すると、この画像が反映されます。'; }
+    catch { f('pfImgNote').textContent = '画像を読み込めませんでした。別の画像を選んでください。'; }
+  });
+  if (f('pfImgDel')) f('pfImgDel').addEventListener('click', async () => {
+    if (!confirm('登録した画像を外します。よろしいですか？')) return;
+    try { await call('adminSetPropertyImage')({ id: S.detail.edit, remove: true }); await loadAll(); render(); } catch (err) { f('pfRes').innerHTML = `<div class="banner err">${esc(err.message)}</div>`; }
+  });
   if (f('pfSave')) f('pfSave').addEventListener('click', async (e) => {
     e.target.disabled = true; f('pfRes').innerHTML = '';
     try {
       const r = await call('adminSaveProperty')({ id: f('pfId').value.trim(), name: f('pfName').value, region: f('pfRegion').value, area: f('pfArea').value, kind: f('pfKind').value, url: f('pfUrl').value, appName: f('pfApp').value, approvalRequired: f('pfAp').checked });
-      await loadAll(); S.detail = null; render(); $('#main').insertAdjacentHTML('afterbegin', `<div class="banner ok">${r.data.created ? '物件を登録しました' : '物件を更新しました'}</div>`);
+      let imgMsg = '';
+      if (S.pendingImg) { try { await call('adminSetPropertyImage')({ id: f('pfId').value.trim(), data: S.pendingImg.data, contentType: S.pendingImg.contentType }); imgMsg = '（画像も反映しました）'; } catch (ie) { imgMsg = `（画像は反映できませんでした：${esc(ie.message)}）`; } S.pendingImg = null; }
+      await loadAll(); S.detail = null; render(); $('#main').insertAdjacentHTML('afterbegin', `<div class="banner ok">${r.data.created ? '物件を登録しました' : '物件を更新しました'}${imgMsg}</div>`);
     } catch (err) { f('pfRes').innerHTML = `<div class="banner err">${esc(err.message)}</div>`; e.target.disabled = false; }
   });
   const setStatus = (attr, status, msg) => $$(`[${attr}]`).forEach((b) => b.addEventListener('click', async () => {

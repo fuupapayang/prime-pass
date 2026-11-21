@@ -13,6 +13,8 @@ const seenKey = 'pp.seenNotices';
 const seen = () => { try { return new Set(JSON.parse(localStorage.getItem(seenKey) || '[]')); } catch { return new Set(); } };
 const markSeen = (ids) => { const s = seen(); ids.forEach((i) => s.add(i)); localStorage.setItem(seenKey, JSON.stringify([...s])); };
 const A = (k) => S.assets[k] || '';
+const pimg = (idOrP) => { const p = typeof idOrP === 'string' ? S.properties.find((x) => x.id === idOrP) : idOrP; return (p && p.imageUrl) || A(assetKey(p ? p.id : idOrP)); };
+const bgp = (idOrP) => (pimg(idOrP) ? `style="background-image:url('${esc(pimg(idOrP))}')"` : '');
 const bg = (k) => (A(k) ? `style="background-image:url('${esc(A(k))}')"` : '');
 
 /* ---- サイトの内容（ES CON プライムメンバーシップ サイトより） ---- */
@@ -280,7 +282,7 @@ function viewPrime() {
     ${secTitle('New Releases', '新規取得事業用地の情報')}
     <div class="hscroll">${RELEASES.map((r) => `<div class="tile"><div class="im tall" ${bg(r.k)}></div><div class="rg">${r.rg}</div><div class="nm">${esc(r.nm)}</div></div>`).join('')}</div>
     ${secTitle('Exclusive Residences', '次代まで輝き続けるために', '<a href="#/collection" class="xs muted" style="text-decoration:none">すべて見る</a>')}
-    <div class="hscroll">${S.properties.map((p) => `<a class="tile" href="#/collection"><div class="im" ${bg(assetKey(p.id))}></div><div class="rg">${esc(p.region || '')}</div><div class="nm">${esc(p.name)}</div></a>`).join('')}</div>
+    <div class="hscroll">${S.properties.map((p) => `<a class="tile" href="#/collection"><div class="im" ${bgp(p.id)}></div><div class="rg">${esc(p.region || '')}</div><div class="nm">${esc(p.name)}</div></a>`).join('')}</div>
     ${secTitle('Prime Concierge', '中古物件のご紹介')}
     <div class="hscroll">${CONCIERGE.map((r) => `<div class="tile"><div class="im" ${bg(r.k)}></div><div class="rg">［${r.rg}］${r.note ? '　' + r.note : ''}</div><div class="nm">${esc(r.nm)}</div></div>`).join('')}</div>
     <div style="margin-top:14px"><button class="btn ghost" data-go="#/contact">プライムコンシェルジュに相談する</button></div>
@@ -299,7 +301,7 @@ function viewProperty(id, sub) {
   tabbar.classList.remove('hidden');
   const s = seen(); const mine = S.notices.filter((n) => n.property === id);
   const chips = `<div class="tabchips"><a href="#/p/${esc(id)}" class="${!sub ? 'on' : ''}">インフォメーション</a><a href="#/p/${esc(id)}/plans" class="${sub === 'plans' ? 'on' : ''}">限定間取り</a><a href="#/p/${esc(id)}/gallery" class="${sub === 'gallery' ? 'on' : ''}">CG・ムービー</a></div>`;
-  const imgUrl = A(assetKey(id));
+  const imgUrl = pimg(id);
   let body;
   if (sub === 'plans') {
     body = `<p class="eyebrow">Members exclusive</p><h1 class="display">Plans for Living</h1>
@@ -311,7 +313,7 @@ function viewProperty(id, sub) {
       <div style="position:relative;margin-top:16px;height:210px;background:#cfc8b8 center/cover no-repeat;${imgUrl ? `background-image:url('${esc(imgUrl)}')` : ''}"><div class="playbtn"><span>${ICON.play}</span></div></div>
       <div class="xs" style="margin:8px 0 18px">プロモーションムービー（約2分）</div>
       <h2 class="h2s" style="font-size:15px;margin-bottom:10px">外観・エントランス CG</h2>
-      <div class="gal">${[...GALLERY, { k: assetKey(id) }].map((g) => `<div class="im" ${bg(g.k)}></div>`).join('')}</div>
+      <div class="gal">${[...GALLERY.map((g) => `<div class="im" ${bg(g.k)}></div>`), `<div class="im" ${bgp(id)}></div>`].join('')}</div>
       <div class="note-box">掲載のCG・映像は、計画段階の図面等に基づいて描いたもので、実際とは異なります。<br>※この画面の画像・映像は、サンプル表示です。</div>`;
   } else {
     body = `<p class="eyebrow">Members exclusive</p><h1 class="display">Private Residence</h1>
@@ -336,7 +338,7 @@ function viewCollection() {
   </div>
   <div class="section">
     ${isNew ? S.properties.map((p) => `<div class="prop">
-      <div class="art" style="${A(assetKey(p.id)) ? `background-image:url('${esc(A(assetKey(p.id)))}')` : ''}"><div class="check ${S.selected.has(p.id) ? 'on' : ''}" data-check="${p.id}">${S.selected.has(p.id) ? ICON.check : ''}</div></div>
+      <div class="art" style="${pimg(p.id) ? `background-image:url('${esc(pimg(p.id))}')` : ''}"><div class="check ${S.selected.has(p.id) ? 'on' : ''}" data-check="${p.id}">${S.selected.has(p.id) ? ICON.check : ''}</div></div>
       <div class="ttl">${esc(p.name)}</div>
       <div class="xs muted">${esc(p.area)}</div>
     </div>`).join('') + `<div class="xs muted" style="margin-bottom:10px">${S.selected.size}件を選択中<br>名前・電話は、登録済みのため、入力不要です</div><button class="btn" id="consultBtn" ${S.selected.size ? '' : 'disabled'}>まとめて相談する</button>`
@@ -389,7 +391,7 @@ function viewNotice(id) {
   <div class="section" style="padding-top:0"><p class="eyebrow">Members exclusive</p><h1 class="display">Member Letter</h1>
     <div class="meta" style="display:flex;gap:8px;align-items:center;margin:16px 0 10px"><span class="tag">${esc(pname(n.property))}</span><span class="xs muted">${fmtDate(n.publishedAt)}</span></div>
     <h2 class="display-jp" style="font-size:19px;line-height:1.6">${esc(n.title)}</h2>
-    <div style="margin:16px 0;height:200px;background:#cfc8b8 center/cover no-repeat;${A(assetKey(n.property)) ? `background-image:url('${esc(A(assetKey(n.property)))}')` : ''}"></div>
+    <div style="margin:16px 0;height:200px;background:#cfc8b8 center/cover no-repeat;${pimg(n.property) ? `background-image:url('${esc(pimg(n.property))}')` : ''}"></div>
     <p style="font-size:13px;line-height:1.9">${esc(n.body)}</p>
     <div class="note-info">この内容は${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日時点の情報です。販売状況は変更となる場合があります。最新は公式サイトでご確認ください。</div>
     <button class="btn" id="askBtn">この件について相談する</button>

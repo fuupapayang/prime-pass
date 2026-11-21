@@ -13,6 +13,7 @@ const { setGlobalOptions } = require('firebase-functions/v2');
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+const BUCKET = 'smipocket-stg.firebasestorage.app';
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -460,4 +461,34 @@ exports.setInquiryStatus = onCall(async (req) => {
   await ref.update({ status, memo: clean(req.data.memo, 300), handledBy: auth.uid, updatedAt: FieldValue.serverTimestamp() });
   await audit(auth.uid, 'inquiry_status', { id, status, property: prop });
   return { ok: true };
+});
+
+/* ---------- 10. 物件画像のアップロード・削除（ADEX専用） ---------- */
+const IMG_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+exports.adminSetPropertyImage = onCall({ memory: '512MiB' }, async (req) => {
+  const a = requireRole(req, ['adex']);
+  const id = clean(req.data && req.data.id, 32);
+  const ref = db.collection('properties').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', '物件が見つかりません');
+  const bucket = admin.storage().bucket(BUCKET);
+  const old = snap.data().imagePath;
+  if (req.data.remove === true) {
+    if (old) await bucket.file(old).delete().catch(() => {});
+    await ref.update({ imageUrl: '', imagePath: '', updatedAt: FieldValue.serverTimestamp() });
+    await audit(a.uid, 'property_image_remove', { id });
+    return { ok: true, imageUrl: '' };
+  }
+  const ext = IMG_TYPES[req.data.contentType];
+  if (!ext) throw new HttpsError('invalid-argument', '画像は、JPEG・PNG・WebPのいずれかにしてください');
+  const buf = Buffer.from(String(req.data.data || ''), 'base64');
+  if (!buf.length || buf.length > 3 * 1024 * 1024) throw new HttpsError('invalid-argument', '画像は、3MB以下にしてください');
+  const path = `site/property/${id}-${Date.now()}.${ext}`;
+  const token = crypto.randomUUID();
+  await bucket.file(path).save(buf, { contentType: req.data.contentType, metadata: { cacheControl: 'private, max-age=3600', metadata: { firebaseStorageDownloadTokens: token } } });
+  const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+  await ref.update({ imageUrl, imagePath: path, updatedAt: FieldValue.serverTimestamp() });
+  if (old) await bucket.file(old).delete().catch(() => {});
+  await audit(a.uid, 'property_image_set', { id, bytes: buf.length });
+  return { ok: true, imageUrl };
 });
