@@ -187,6 +187,12 @@ function viewPush() {
 function noticeRow(n, s) {
   return `<a class="nrow" href="#/notice/${esc(n.id)}"><div class="meta"><span class="tag">${esc(pname(n.property))}</span><span>${fmtDate(n.publishedAt)}</span>${s.has(n.id) ? '' : '<span class="reddot"></span>'}</div><div class="t">${esc(n.title)}</div></a>`;
 }
+function noticeLine(n, s) {
+  return `<a class="list-item" href="#/notice/${esc(n.id)}" style="text-decoration:none;color:inherit">
+    ${s.has(n.id) ? '<span style="width:7px;flex:none"></span>' : '<span class="reddot"></span>'}
+    <div><div class="t">${esc(n.title)}</div><div class="d">${fmtDate(n.publishedAt)}</div></div>
+    <span class="chev">${ICON.chev}</span></a>`;
+}
 const selectorBtn = (label) => `<button class="selector" id="pageSel">${esc(label)}<span style="width:12px;display:inline-block">${ICON.down}</span></button>`;
 function openSheet(cur) {
   const reg = new Set(S.memberships.map((m) => m.property));
@@ -215,7 +221,7 @@ function viewHome() {
   </div>
   <div class="section">
     ${secTitle('News', '新着のお知らせ', '<a href="#/notices" class="xs muted" style="text-decoration:none">すべて見る</a>')}
-    ${latest.length ? latest.map((n) => noticeRow(n, s)).join('') : '<div class="muted small">お知らせは、まだありません</div>'}
+    <div class="list">${latest.length ? latest.map((n) => noticeLine(n, s)).join('') : '<div class="list-item"><div class="d">お知らせは、まだありません</div></div>'}</div>
     <h2 class="h2" style="margin-top:26px">プライムサイト</h2>
     <div class="quick">
       <a href="#/collection">${ICON.building}物件情報</a>
@@ -283,7 +289,7 @@ function viewProperty(id, sub) {
     body = `<p class="eyebrow">Members exclusive</p><h1 class="display">Private Residence</h1>
       <div class="frame-hero" style="margin:16px 0 0;height:300px;background-image:url('${esc(A(assetKey(id)))}')"><div class="k">会員限定</div><div class="name" style="font-size:20px">${esc(mine[0] ? mine[0].title : p.name)}</div><div class="sub">${mine[0] ? fmtDate(mine[0].publishedAt) + ' 時点' : ''}</div></div>
       <h2 class="h2" style="margin-top:24px">お知らせ</h2>
-      ${mine.length ? mine.map((n) => noticeRow(n, s)).join('') : '<div class="muted small">お知らせは、まだありません</div>'}
+      <div class="list">${mine.length ? mine.map((n) => noticeLine(n, s)).join('') : '<div class="list-item"><div class="d">お知らせは、まだありません</div></div>'}</div>
       ${disclaimer()}`;
   }
   app.innerHTML = `<div class="topbar"><div><div style="font-family:var(--serif-jp);font-size:16px;color:var(--green);line-height:1.3">${esc(p.name)}</div><div class="xs" style="color:var(--gold)">限定ページ</div></div><button class="icon-btn" data-go="#/notices" aria-label="お知らせ">${ICON.bell}</button></div>
