@@ -57,15 +57,37 @@ function requireAuth(req) {
 }
 
 /* ---------- 1. 登録フォームからの受け取り ---------- */
+// 「ご関心あるプロジェクト」の文字を、物件に結びつける（空白・記号・括弧を除いて、物件名と部分一致）
+const normName = (s) => String(s || '').replace(/[\s\u3000\[\]［］()（）「」・\/／\-–—,，、]/g, '').toLowerCase();
+async function matchProjects(list) {
+  const snap = await db.collection('properties').get();
+  const props = snap.docs.filter((d) => d.data().status !== 'archived' && d.id !== 'prime').map((d) => ({ id: d.id, n: normName(d.data().name) }));
+  const hit = new Set();
+  for (const raw of list) {
+    const x = normName(raw);
+    if (!x) continue;
+    for (const p of props) if (p.n && (x.includes(p.n) || p.n.includes(x))) hit.add(p.id);
+  }
+  return [...hit];
+}
+
 exports.intake = onRequest({ cors: ALLOWED_ORIGINS }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const b = req.body || {};
   const name = clean(b.name, 60);
   const email = clean(b.email, 120).toLowerCase();
   const phone = clean(b.phone, 30);
-  const property = clean(b.property, 20);
   const formType = clean(b.formType || 'entry', 20);
-  if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !phone || !(await activeProps()).includes(property) || b.consent !== true) {
+  const ap = await activeProps();
+  let targets = [];
+  if (b.property) {
+    const one = clean(b.property, 20);
+    if (ap.includes(one)) targets = [one];
+  } else if (Array.isArray(b.projects)) {
+    targets = (await matchProjects(b.projects.slice(0, 30).map((x) => clean(x, 120)))).filter((id) => ap.includes(id));
+    if (!targets.length && ap.includes('prime')) targets = ['prime']; // 物件が選ばれていない場合は、会員向けページのみ
+  }
+  if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !phone || !targets.length || b.consent !== true) {
     return res.status(400).json({ error: 'invalid_input' });
   }
 
@@ -83,17 +105,19 @@ exports.intake = onRequest({ cors: ALLOWED_ORIGINS }, async (req, res) => {
     await idxRef.set({ cid, anonId, createdAt: FieldValue.serverTimestamp() });
   }
 
-  const mid = `${cid}_${property}`;
   const batch = db.batch();
-  batch.set(
-    db.collection('contacts').doc(mid),
-    { cid, property, name, email, phone, consentAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() },
-    { merge: true }
-  );
-  const msRef = db.collection('memberships').doc(mid);
-  const msSnap = await msRef.get();
-  if (msSnap.exists) batch.update(msRef, { tags: FieldValue.arrayUnion(formType) });
-  else batch.set(msRef, { cid, anonId, property, tags: [formType], joinedAt: FieldValue.serverTimestamp(), lastSeenAt: null, pushEnabled: false });
+  for (const property of targets) {
+    const mid = `${cid}_${property}`;
+    batch.set(
+      db.collection('contacts').doc(mid),
+      { cid, property, name, email, phone, consentAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    const msRef = db.collection('memberships').doc(mid);
+    const msSnap = await msRef.get();
+    if (msSnap.exists) batch.update(msRef, { tags: FieldValue.arrayUnion(formType) });
+    else batch.set(msRef, { cid, anonId, property, tags: [formType], joinedAt: FieldValue.serverTimestamp(), lastSeenAt: null, pushEnabled: false });
+  }
   const token = crypto.randomBytes(24).toString('base64url');
   batch.set(db.collection('tokens').doc(sha256(token)), {
     cid,
@@ -101,8 +125,8 @@ exports.intake = onRequest({ cors: ALLOWED_ORIGINS }, async (req, res) => {
     used: false,
   });
   await batch.commit();
-  await audit('system', 'intake', { anonId, property, formType });
-  return res.json({ token, expiresInSec: TOKEN_TTL_SEC });
+  await audit('system', 'intake', { anonId, properties: targets, formType });
+  return res.json({ token, expiresInSec: TOKEN_TTL_SEC, properties: targets });
 });
 
 /* ---------- 2. 一時番号 → ログイン ---------- */

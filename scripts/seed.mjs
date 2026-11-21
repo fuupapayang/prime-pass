@@ -113,8 +113,9 @@ const PROPS = {
   'fvillage508': { name: 'エスコンフィールドタワー', region: '北海道', area: '北海道 北広島市', kind: '新築' },
   'ost-garden': { name: 'オストガーデン軽井沢', region: '中部', area: '長野県 軽井沢町', kind: '新築' },
   'alia-hawaii': { name: 'ハワイ Alia / Kuilei', region: '海外', area: 'ハワイ', kind: '新築' },
+  'prime': { name: 'エスコン プライム（会員向けページ）', region: '共通', area: '', kind: 'プライム' },
 };
-Object.entries(PROPS).forEach(([id, p], i) => put(`properties/${id}`, { ...p, status: 'active', order: i + 1, url: '', approvalRequired: id === 'meguro62' }));
+Object.entries(PROPS).forEach(([id, p], i) => put(`properties/${id}`, { ...p, status: 'active', order: id === 'prime' ? 0 : i, url: '', approvalRequired: id === 'meguro62' }));
 
 const NAMES = ['山田 太郎', '佐藤 花子', '鈴木 一郎', '高橋 美咲', '田中 健', '伊藤 彩', '渡辺 誠', '中村 玲子', '小林 拓海', '加藤 由美', '吉田 大輔', '山本 優子'];
 const PH = 'hayama24'; const PM = 'meguro62'; const PD = 'doyama227'; const PN = 'naha-asato83'; const PF = 'fvillage508'; const PO = 'ost-garden';

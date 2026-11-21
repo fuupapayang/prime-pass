@@ -1,0 +1,28 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>GTMでの設定手順（テスト用）</title><link rel="stylesheet" href="form.css">
+<style>pre{background:#10151c;color:#d7e0ea;padding:12px;overflow:auto;font-size:12px;white-space:pre-wrap}h2{font-size:16px;margin-top:28px}li{margin-bottom:6px}</style></head><body>
+<header class="h"><b>PRIME PASS</b><h1>GTMで、氏名・電話・メールを引き継ぐ設定手順</h1></header>
+<div class="wrap">
+<div class="notice">テスト用のGTMコンテナ（ES CONの本物のコンテナは使いません）で、お試しください。</div>
+<h2>仕組み</h2>
+<ol>
+<li>確認画面が開く → タグ①が、画面の入力値（姓・名・電話・メール・関心プロジェクト・同意）を読み取り、ブラウザの一時メモ（sessionStorage）に置く。</li>
+<li>完了画面が開く → タグ②が、そのメモをHTTPSで送る。使い捨ての「一時番号」が返る。</li>
+<li>一時番号だけをつけて、アプリ（PRIME PASS）へ自動で移動。個人情報は、URLに載らない。</li>
+</ol>
+<h2>手順</h2>
+<ol>
+<li>このフォームのページ上部の「GTMのコンテナID」に、テスト用のID（GTM-から始まる）を入れて保存。</li>
+<li>GTMで、トリガーを2つ作る：種類「カスタムイベント」、イベント名 <code>pp_form_confirm_view</code> と <code>pp_form_thanks_view</code>。</li>
+<li>タグを2つ作る：種類「カスタムHTML」。①に <a href="tag-confirm.js">tag-confirm.js</a> の中身を、<code>&lt;script&gt;</code> と <code>&lt;/script&gt;</code> で囲んで貼り付け、トリガーは confirm_view。②に <a href="tag-thanks.js">tag-thanks.js</a> を同様に貼り付け、トリガーは thanks_view。</li>
+<li>GTMの「プレビュー」で、このフォームのURLをつないで、入力 → 確認 → 完了と進める。</li>
+<li>確認用パネルに「①確認画面で読み取り」「②送信：成功」の記録が出て、5秒後にアプリへ移動すれば成功。</li>
+</ol>
+<h2>本番のフォーム（lmp1.net）に使うときの確認事項</h2>
+<ul>
+<li>確認画面に、入力値が、同じ項目名（input_model[…]）の入力欄として残っているか（このまねフォームは、そう想定して作っています）。違う場合は、タグ①の読み取り部分だけ直します。</li>
+<li>確認画面・完了画面の表示を、GTMが検知できる方法（URL一致、または、ページ表示イベント）。</li>
+<li>本番では、タグ内のURL（INTAKE・APP）を、本番のものに差し替える。</li>
+<li>GA4のイベント送信とは別に、このタグは、個人情報をGAへ送りません（GAに個人情報を送ると規約違反になるため、送信先は、PRIME PASSの受付窓口だけです）。</li>
+</ul>
+<p><a href="index.html">← フォームへ戻る</a></p>
+</div></body></html>

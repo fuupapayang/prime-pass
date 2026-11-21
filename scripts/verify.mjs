@@ -129,7 +129,7 @@ if (rd1.result) {
   const c1b = await cj(sT2, 'saveContent', { id: c1.result?.id, property: 'meguro62', kind: 'plan', title: T, spec: '98.0㎡ 4LDK', sale: 'on', action: 'submit' });
   gchk('直して、もう一度依頼する→承認待ち', c1b.result?.status === 'pending');
   gchk('ADEXが、承認する→公開される', (await cj(aT, 'reviewContent', { id: c1.result?.id, decision: 'approve' })).result?.status === 'published');
-  const seen1 = await qdocs(mtok, 'contents', 'property', 'meguro62');
+  const seen1 = await (async () => { const r = await fetch(`https://firestore.googleapis.com/v1/projects/${P}/databases/(default)/documents:runQuery`, { method: 'POST', headers: { Authorization: `Bearer ${mtok}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'contents' }], where: { compositeFilter: { op: 'AND', filters: [{ fieldFilter: { field: { fieldPath: 'property' }, op: 'EQUAL', value: { stringValue: 'meguro62' } } }, { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'published' } } }] } } } }) }); const j = await r.json(); return Array.isArray(j) ? j.filter((x) => x.document) : []; })();
   gchk('お客様が、公開中のコンテンツを読める', seen1.length === 0 ? false : true);
   const imgU = seen1[0] && seen1[0].fields.imageUrl && seen1[0].fields.imageUrl.stringValue;
   if (imgU) gchk('　間取り図の画像を、取得できる', (await fetch(imgU)).status === 200);

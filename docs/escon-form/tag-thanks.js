@@ -1,0 +1,32 @@
+/* PRIME PASS 引き継ぎタグ ②（完了画面で、サーバーへ送り、アプリの案内へ移動する）
+ *
+ * GTM の「カスタムHTML」タグに、そのまま貼り付けて使えます（前後を <script> と </script> で囲む）。
+ * トリガー：完了画面の表示（カスタムイベント pp_form_thanks_view、または完了画面のURL）
+ *
+ * 流れ：保存しておいた3項目を、HTTPSで送る → 使い捨ての「一時番号」が返る → 一時番号だけをつけて、アプリの案内へ自動で移動。
+ * 個人情報は、URLに載せません。
+ */
+(function () {
+  var INTAKE = 'https://asia-northeast1-smipocket-stg.cloudfunctions.net/intake'; // 本番では、本番のURLに差し替える
+  var APP = 'https://fuupapayang.github.io/prime-pass/';                           // 本番では、本番のURLに差し替える
+  var log = function (l, o) { if (window.__ppLog) window.__ppLog(l, o); };
+  var raw = null;
+  try { raw = sessionStorage.getItem('pp.handover'); } catch (e) { /* noop */ }
+  if (!raw) { log('②完了画面：引き継ぎデータなし（確認画面で、読み取れていません）', {}); return; }
+  var d; try { d = JSON.parse(raw); } catch (e) { return; }
+  try { sessionStorage.removeItem('pp.handover'); } catch (e) { /* noop */ }
+  fetch(INTAKE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: d.name, email: d.email, phone: d.phone, projects: d.projects, formType: 'entry', consent: d.consent }) })
+    .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+    .then(function (x) {
+      if (!x.ok || !x.j.token) { log('②送信：失敗', { 結果: JSON.stringify(x.j).slice(0, 80) }); return; }
+      log('②送信：成功（一時番号を受け取りました）', { 登録した物件の数: (x.j.properties || []).length });
+      var url = APP + '?t=' + encodeURIComponent(x.j.token);
+      var box = document.createElement('div');
+      box.style.cssText = 'margin:20px auto;max-width:560px;padding:16px;border:1px solid #b7cdb9;background:#e8efe6;color:#2e5d3f;font-size:14px;text-align:center';
+      box.innerHTML = '<div style="font-weight:700;margin-bottom:6px">アプリ「PRIME PASS」のご案内</div><div><span id="pp-count">5</span>秒後に、自動で移動します。</div><a href="' + url + '" style="display:inline-block;margin-top:10px;padding:10px 24px;background:#193a2b;color:#fff;text-decoration:none">いますぐ移動する</a>';
+      var host = document.querySelector('.pp-thanks-anchor') || document.body;
+      host.insertBefore(box, host.firstChild);
+      var c = 5; var iv = setInterval(function () { c -= 1; var s = document.getElementById('pp-count'); if (s) s.textContent = c; if (c <= 0) { clearInterval(iv); if (!window.__ppNoRedirect) location.href = url; } }, 1000);
+    })
+    .catch(function (e) { log('②送信：通信エラー', { 内容: String(e).slice(0, 60) }); });
+})();

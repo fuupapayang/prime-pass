@@ -111,7 +111,7 @@ async function loadData() {
     getDoc(doc(db, 'config', 'assets')).catch(() => null),
     getDocs(collection(db, 'properties')),
   ]);
-  S.properties = ps.docs.map((d) => ({ id: d.id, ...d.data() })).filter((p) => p.status !== 'archived').sort((a, b) => (a.order || 0) - (b.order || 0));
+  S.properties = ps.docs.map((d) => ({ id: d.id, ...d.data() })).filter((p) => p.status !== 'archived' && p.kind !== 'プライム').sort((a, b) => (a.order || 0) - (b.order || 0));
   S.name = cs.docs.length ? cs.docs[0].data().name : '';
   S.contact = cs.docs.length ? cs.docs[0].data() : null;
   S.memberships = ms.docs.map((d) => d.data());
