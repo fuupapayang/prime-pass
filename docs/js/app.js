@@ -171,6 +171,7 @@ function viewInstall() {
       <h2 class="display-jp" style="margin:18px 0 8px;font-size:24px">スマートフォンで開いてください</h2>
       <p class="muted small">PRIME PASS は、スマートフォンのホーム画面に追加してご利用いただくアプリです。</p>
       <div class="center" style="margin:20px 0"><div class="qrbox" id="qr">読み込み中…</div><div class="xs muted" style="margin-top:8px">カメラで読み取ってください</div></div>
+      <div class="banner warn" style="text-align:center;margin:6px 0 10px"><b>15分以内に登録してください。</b><br><span class="xs">QRコードは、15分間・1回だけ使えます。期限が切れた場合は、もう一度、登録フォームからお進みください。</span></div>
       <p class="xs muted center">QRコードを読み取ると、スマートフォンに案内ページが開きます。</p>
       <div class="stack" style="margin-top:14px"><button class="btn" id="copyBtn">案内のURLをコピー</button><button class="btn ghost" data-go="#/push">このまま続ける</button></div></div>`;
   }
@@ -182,7 +183,7 @@ function viewInstall() {
   if (qr) {
     const sc = document.createElement('script');
     sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
-    sc.onload = async () => { let u = location.origin + location.pathname; try { const r = await call('mintHandoff')({ kind: 'qr' }); u += '?t=' + encodeURIComponent(r.data.token); } catch { /* 番号が作れない場合は、URLのみ */ } const q = window.qrcode(0, 'M'); q.addData(u); q.make(); qr.innerHTML = q.createSvgTag(5) + '<div class="xs muted" style="margin-top:6px">このQRは、15分間・1回だけ使えます</div>'; };
+    sc.onload = async () => { let u = location.origin + location.pathname; try { const r = await call('mintHandoff')({ kind: 'qr' }); u += '?t=' + encodeURIComponent(r.data.token); } catch { /* 番号が作れない場合は、URLのみ */ } const q = window.qrcode(0, 'M'); q.addData(u); q.make(); qr.innerHTML = q.createSvgTag(5) + ''; };
     sc.onerror = () => { qr.textContent = location.origin + location.pathname; };
     document.head.appendChild(sc);
   }
