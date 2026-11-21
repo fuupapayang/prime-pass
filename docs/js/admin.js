@@ -79,24 +79,26 @@ async function loadAll() {
 }
 
 /* ---------- 画面 ---------- */
-const TABS = () => [
-  ['overview', 'ダッシュボード'], ['members', '登録者'], ['notices', 'お知らせ配信'], ['inquiries', '問い合わせ'], ['reservations', '来場予約'], ['events', '行動ログ'],
-  ...(can.manage() ? [['properties', '物件'], ['staff', '担当者'], ['admin', '操作記録']] : []),
-];
+const NAV = [['overview', 'ホーム', 'M4 11l8-7 8 7v9H4z'], ['members', '登録者', 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c1-4 4-6 8-6s7 2 8 6'], ['notices', '配信', 'M3 11l18-8-8 18-2-8z'], ['inquiries', '問い合わせ', 'M3 5h18v14H3zM3 7l9 7 9-7'], ['menu', 'メニュー', 'M4 6h16M4 12h16M4 18h16']];
+const MENU_TABS = ['reservations', 'events', 'properties', 'staff', 'admin'];
+const TAB_LABEL = { reservations: '来場予約', events: '行動ログ', properties: '物件の管理', staff: '担当者アカウント', admin: '操作記録' };
+const menuItems = () => [['reservations', '来場予約', '予約の日別一覧'], ['events', '行動ログ', '匿名IDでの行動の記録'], ...(can.manage() ? [['properties', '物件の管理', '登録・編集・掲載の停止'], ['staff', '担当者アカウント', '発行・担当物件の変更・停止'], ['admin', '操作記録', '誰がいつ何をしたか']] : [])];
+
 function shell(inner) {
+  const active = MENU_TABS.includes(S.tab) ? 'menu' : S.tab;
+  const chart = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>';
   root.innerHTML = `<div class="admin">
     <div class="admin-head">
-      <div><div class="brand"><span class="mark">P</span>PRIME PASS <span class="xs muted" style="letter-spacing:.04em;font-family:var(--sans)">管理画面</span></div>
-        <div class="pill-row"><span class="role-pill">ログイン中：<b>${esc(roleName())}</b></span><span class="tag gold" style="align-self:center">${ENV_LABEL}</span></div></div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${scope().length > 1 ? `<select class="selector" id="propSel" style="margin:0"><option value="all">すべての物件</option>${scope().map((p) => `<option value="${esc(p)}" ${S.prop === p ? 'selected' : ''}>${esc(PNAMES[p] || p)}</option>`).join('')}</select>` : ''}<button class="btn sm ghost" id="lo">ログアウト</button></div>
+      ${scope().length > 1 ? `<label class="selector" style="margin:0">${chart}<select id="propSel" style="border:0;background:none;font-family:inherit;font-size:12px;color:var(--ink)"><option value="all">すべての物件</option>${scope().map((p) => `<option value="${esc(p)}" ${S.prop === p ? 'selected' : ''}>${esc(PNAMES[p] || p)}</option>`).join('')}</select></label>` : `<span class="selector" style="margin:0">${chart}${esc((PNAMES[scope()[0]] || ''))}</span>`}
+      <span class="tag soft">${esc(roleName())}</span>
     </div>
-    <div class="navtabs">${TABS().map(([k, l]) => `<button data-t="${k}" class="${S.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-    <div id="main">${inner}</div></div>`;
-  $('#lo').addEventListener('click', () => signOut(auth));
+    <div id="main">${inner}</div>
+    <nav class="bnav">${NAV.map(([k, l, d]) => `<button data-t="${k}" class="${active === k ? 'on' : ''}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5"><path d="${d}"/></svg><span>${l}</span></button>`).join('')}</nav></div>`;
   const ps = $('#propSel'); if (ps) ps.addEventListener('change', () => { S.prop = ps.value; S.detail = null; render(); });
   $$('[data-gotab]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); S.tab = a.dataset.gotab; S.detail = null; render(); }));
-  $$('.navtabs button').forEach((b) => b.addEventListener('click', () => { S.tab = b.dataset.t; S.detail = null; render(); }));
+  $$('.bnav button').forEach((b) => b.addEventListener('click', () => { S.tab = b.dataset.t; S.detail = null; render(); }));
 }
+
 const pn = (p) => esc(PNAMES[p] || p);
 const ago = (ts, days) => (ts?.toMillis?.() || 0) > Date.now() - days * 86400000;
 
@@ -106,7 +108,7 @@ const avatar = (s) => `<span style="width:38px;height:38px;background:var(--soft
 const TAGL = { entry: '会員登録', document: '資料請求', visit: '来場予約' };
 const hoursAgo = (ts) => { const h = Math.floor((Date.now() - (ts?.toMillis?.() || Date.now())) / 3600000); return h < 1 ? '1時間以内' : h < 24 ? `${h}時間経過` : `${Math.floor(h / 24)}日経過`; };
 const stat = (label, n, sub = '', red = false) => `<div class="stat"><div class="l">${label}</div><div class="n" style="${red ? 'color:var(--danger)' : ''}">${n}</div>${sub ? `<div class="xs muted">${sub}</div>` : ''}</div>`;
-const goTab = (t, l) => `<a href="#" data-gotab="${t}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 4px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit"><span>${l}</span><span class="muted">›</span></a>`;
+const goTab = (t, l, sub = '', col = '#d8d1c3') => `<a href="#" data-gotab="${t}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 4px 14px 12px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit;border-left:3px solid ${col}"><span><b style="font-weight:500">${l}</b>${sub ? `<br><span class="xs" style="color:${col}">${sub}</span>` : ''}</span><span class="muted">›</span></a>`;
 
 function tabOverview() {
   const d = S.data; const mem = fd(d.memberships); const ev = fd(d.events); const nt = fd(d.notices); const inq = fd(d.inquiries);
@@ -118,7 +120,7 @@ function tabOverview() {
   return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Dashboard</h1>
   <div class="grid4">${stat('登録者', uniq, `物件ごとの登録 ${mem.length}件`)}${can.inquiries() ? stat('未対応の問い合わせ', newInq.length, newInq.length ? '要対応' : '', newInq.length > 0) : ''}${stat('通知オン', push, `登録の ${mem.length ? Math.round((push / mem.length) * 100) : 0}%`)}${stat('直近7日のアクセス', ev.filter((e) => ago(e.ts, 7)).length)}</div>
   <h2 class="h2" style="margin-top:26px">今日やること</h2>
-  <div style="border-top:1px solid var(--line)">${can.inquiries() ? goTab('inquiries', `未対応の問い合わせ ${newInq.length}件`) + goTab('reservations', `来場予約 ${visits.length}件`) : ''}${goTab('members', `通知オフの登録者 ${mem.length - push}件`)}</div>
+  <div style="border-top:1px solid var(--line)">${can.inquiries() ? goTab('inquiries', `未対応の問い合わせ ${newInq.length}件`, newInq.length ? '早めの対応が必要です' : '', '#b3402f') + goTab('reservations', `来場予約 ${visits.length}件`, '', '#2f6db5') : ''}${goTab('members', `通知オフの登録者 ${mem.length - push}件`, '通知が届かない方です', '#997544')}</div>
   <h2 class="h2" style="margin-top:26px">最近の配信</h2>
   <div>${recent.length ? recent.map((n) => `<div class="nrow" style="cursor:default"><div class="meta"><span class="tag">${pn(n.property)}</span><span>${fmtDate(n.publishedAt)}</span></div><div class="t">${esc(n.title)}</div>${n.stats ? `<div class="xs muted" style="margin-top:4px">対象 ${n.stats.members}人／到達 ${n.stats.success}件（宛先 ${n.stats.pushTargets}）</div>` : ''}</div>`).join('') : '<div class="muted small">まだありません</div>'}</div>
   <h2 class="h2" style="margin-top:26px">物件ごとの登録者</h2>
@@ -149,7 +151,7 @@ function tabMembers() {
   ${showPII ? '' : '<div class="banner warn">この役割では、名前・メール・電話は見えません（匿名IDのみ）。</div>'}
   <input class="input" id="mq" placeholder="${showPII ? '名前・メール・電話で探す' : '匿名IDで探す'}" value="${esc(S.q || '')}">
   <div class="chips" id="mf" style="margin:12px 0">${[['all', 'すべて'], ['entry', '会員登録'], ['document', '資料請求'], ['visit', '来場予約']].map(([k, l]) => `<button class="chip ${S.mfilter === k ? 'on' : ''}" data-v="${k}">${l}</button>`).join('')}</div>
-  <div class="xs muted" style="margin-bottom:8px">${rows.length}件　／　最終アクセスが新しい順ではなく、登録が新しい順</div>
+  <div class="xs muted" style="margin-bottom:8px">${rows.length}人　／　登録が新しい順</div>
   <div>${rows.map((m) => { const c = pii[m.cid + '_' + m.property]; return `<div class="nrow" data-mid="${esc(m.cid + '_' + m.property)}" style="display:flex;gap:12px;align-items:center">${avatar(showPII ? c?.name : 'M')}<div style="flex:1;min-width:0"><div class="t">${showPII ? esc(c?.name || '—') : `<span class="mono">${esc(m.anonId)}</span>`}</div><div class="xs muted">${pn(m.property)}　${(m.tags || []).map((t) => `<span class="tag">${esc(TAGL[t] || t)}</span>`).join(' ')}</div></div><div class="xs muted" style="text-align:right">${fmtDate(m.joinedAt)}<br>${m.pushEnabled ? '通知オン' : '<span style="color:var(--danger)">通知オフ</span>'}</div></div>`; }).join('') || '<div class="muted small">該当する登録者は、いません</div>'}</div>`;
 }
 function bindMembers() {
@@ -167,9 +169,10 @@ function detailMember() {
   <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px">Member Profile</h1>
   <div style="display:flex;gap:12px;align-items:center;margin:16px 0">${avatar(showPII ? c?.name : 'M')}<div><div style="font-family:var(--serif-jp);font-size:19px">${showPII ? esc(c?.name || '—') + ' 様' : `<span class="mono">${esc(m.anonId)}</span>`}</div><div>${(m.tags || []).map((t) => `<span class="tag">${esc(TAGL[t] || t)}</span>`).join(' ')} <span class="tag dark">会員</span></div></div></div>
   ${showPII ? `<div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><span class="muted">電話</span><a href="tel:${esc(c?.phone)}">${esc(c?.phone)}</a></div><div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><span class="muted">メール</span><a href="mailto:${esc(c?.email)}">${esc(c?.email)}</a></div><p class="xs muted" style="margin-top:8px">個人情報の閲覧は、ES CONの担当者・ADEXのみです。</p>` : '<div class="banner warn">個人情報は、この役割では見えません。</div>'}
+  <div style="display:flex;gap:10px;margin-top:18px"><button class="btn" style="flex:1" data-soon="個別に送る">個別に送る</button><button class="btn ghost" style="flex:1" data-soon="タグを編集">タグを編集</button></div>
   <h2 class="h2" style="margin-top:24px">登録している物件</h2><div class="chips">${regs.map((x) => `<span class="tag dark">${pn(x.property)}</span>`).join('')}</div>
   <h2 class="h2" style="margin-top:24px">行動の履歴</h2>
-  <div class="list">${evs.map((e) => `<div class="list-item" style="cursor:default"><div><div class="t" style="font-size:13px">${esc(lab[e.type] || e.type)}</div><div class="d">${pn(e.property)}　${fmtDate(e.ts)}</div></div></div>`).join('') || '<div class="muted small">まだありません</div>'}</div>`;
+  <div class="list">${evs.map((e) => `<div class="list-item" style="cursor:default"><span style="width:7px;height:7px;border-radius:50%;background:var(--gold);margin-top:9px;flex:none"></span><div><div class="t" style="font-size:13px">${esc(lab[e.type] || e.type)}</div><div class="d">${pn(e.property)}　${fmtDate(e.ts)}</div></div></div>`).join('') || '<div class="muted small">まだありません</div>'}</div>`;
 }
 
 /* ---------- お知らせ配信（作成・プレビュー・結果） ---------- */
@@ -177,31 +180,39 @@ function tabNotices() {
   const d = S.data;
   const list = fd(d.notices).slice().sort((a, b) => (b.publishedAt?.toMillis?.() || 0) - (a.publishedAt?.toMillis?.() || 0));
   return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Notifications</h1>
-  <div class="card" style="margin-bottom:22px"><h2 class="h2">通知を作る</h2>
-    ${can.send() ? '' : `<div class="banner warn">この役割（${esc(roleName())}）では、通知を配信できません。配信しようとすると、拒否されます（権限のテスト用に、送信ボタンは使えます）。</div>`}
-    <div class="field"><label>物件</label><select class="input" id="np">${PROPS.map((p) => `<option value="${esc(p)}" ${S.prop === p ? 'selected' : ''}>${pn(p)}</option>`).join('')}</select>
-      <div class="xs muted" style="margin-top:4px">※自分の担当ではない物件を選ぶと、サーバーが拒否します（権限のテスト）</div></div>
-    <div class="field"><label>タイトル（30文字まで）　<span id="ntc" class="xs">0/30</span></label><input class="input" id="nt" maxlength="30" value="限定間取りを追加しました"></div>
-    <div class="field"><label>本文（80文字まで）　<span id="nbc" class="xs">0/80</span></label><textarea class="input" id="nb" maxlength="80">限定の間取りを公開しました。アプリでご覧ください。</textarea></div>
-    <div class="xs muted" style="margin-bottom:10px">通知の文面には、お客様の氏名などの個人情報は入りません。</div>
-    <h2 class="h2" style="margin-top:6px">端末での見え方</h2>
-    <div style="background:var(--green);padding:14px;margin-bottom:14px"><div style="background:#fff;padding:10px 12px;display:flex;gap:10px"><span style="width:30px;height:30px;background:var(--gold);color:#fff;display:grid;place-items:center;font-family:var(--serif-en)">P</span><div><div class="xs muted">PRIME PASS　今</div><div id="pvT" style="font-weight:500;font-size:13px"></div><div id="pvB" class="xs"></div></div></div></div>
-    <button class="btn" id="ns" style="max-width:300px">配信する</button><div id="nr" style="margin-top:12px"></div></div>
-  <h2 class="h2">配信したお知らせ</h2>
-  <div>${list.map((n) => `<div class="nrow" style="cursor:default"><div class="meta"><span class="tag">${pn(n.property)}</span><span>${fmtDate(n.publishedAt)}</span><span class="tag gold">${esc(ROLE_LABEL[n.createdByRole] || n.createdByRole)}</span></div><div class="t">${esc(n.title)}</div>${n.stats ? `<div class="xs muted" style="margin-top:4px">対象 ${n.stats.members}人／宛先 ${n.stats.pushTargets}件／到達 ${n.stats.success}件${n.stats.failure ? `／失敗 ${n.stats.failure}件` : ''}</div>` : ''}</div>`).join('') || '<div class="muted small">まだありません</div>'}</div>`;
+  <div class="seg"><button class="" disabled style="opacity:.45">予約中 0</button><button class="on">配信済み ${list.length}</button><button disabled style="opacity:.45">承認待ち 0</button><button disabled style="opacity:.45">下書き 0</button></div>
+  <div>${list.map((n) => `<div class="nrow" style="cursor:default"><div class="meta"><span class="tag soft">配信済み</span><span class="tag">${pn(n.property)}</span><span>${fmtDate(n.publishedAt)}</span></div><div class="t">${esc(n.title)}</div>${n.stats ? `<div class="xs muted" style="margin-top:4px">対象 ${n.stats.members}人／宛先 ${n.stats.pushTargets}件／到達 ${n.stats.success}件${n.stats.failure ? `／失敗 ${n.stats.failure}件` : ''}</div>` : ''}</div>`).join('') || '<div class="muted small">まだありません</div>'}</div>
+  <p class="xs muted">※予約配信・承認フロー・下書きは、これから作ります。</p>
+  <button class="btn" id="newNotice" style="margin-top:14px">＋ 通知を新しく作る</button>`;
+}
+function detailCompose() {
+  return `<button class="btn sm ghost" id="back">‹ 通知の一覧へ</button>
+  <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Compose a Letter</h1>
+  ${can.send() ? '' : `<div class="banner warn">この役割（${esc(roleName())}）では、通知を配信できません。配信しようとすると、拒否されます（権限のテスト用に、送信ボタンは使えます）。</div>`}
+  <div class="field"><label>物件</label><select class="input" id="np">${PROPS.map((p) => `<option value="${esc(p)}" ${S.prop === p ? 'selected' : ''}>${pn(p)}</option>`).join('')}</select>
+    <div class="xs muted" style="margin-top:4px">※自分の担当ではない物件を選ぶと、サーバーが拒否します（権限のテスト）</div></div>
+  <div class="field"><label>タイトル（30文字まで）　<span id="ntc" class="xs">0/30</span></label><input class="input" id="nt" maxlength="30" value="限定間取りを追加しました"></div>
+  <div class="field"><label>本文（80文字まで）　<span id="nbc" class="xs">0/80</span></label><textarea class="input" id="nb" maxlength="80">限定の間取りを公開しました。アプリでご覧ください。</textarea></div>
+  <div style="background:var(--soft);padding:12px 14px;display:flex;justify-content:space-between;font-size:12px;margin-bottom:10px"><span class="muted">配信の対象</span><span id="tgt"></span></div>
+  <div class="xs muted" style="margin-bottom:10px">通知の文面には、お客様の氏名などの個人情報は入りません。</div>
+  <h2 class="h2">端末での見え方</h2>
+  <div style="background:var(--green);padding:14px;margin-bottom:14px"><div style="background:#fff;padding:10px 12px;display:flex;gap:10px"><span style="width:30px;height:30px;background:var(--gold);color:#fff;display:grid;place-items:center;font-family:var(--serif-en)">P</span><div><div class="xs muted">PRIME PASS　今</div><div id="pvT" style="font-weight:500;font-size:13px"></div><div id="pvB" class="xs"></div></div></div></div>
+  <button class="btn" id="ns">配信する</button><div id="nr" style="margin-top:12px"></div>`;
 }
 function bindNotices() {
+  const nb = $('#newNotice'); if (nb) nb.addEventListener('click', () => { S.detail = { type: 'compose' }; render(); window.scrollTo(0, 0); });
+}
+function bindCompose() {
   const b = $('#ns'); if (!b) return;
-  const sync = () => { $('#ntc').textContent = `${$('#nt').value.length}/30`; $('#nbc').textContent = `${$('#nb').value.length}/80`; $('#pvT').textContent = $('#nt').value; $('#pvB').textContent = $('#nb').value; };
-  $('#nt').addEventListener('input', sync); $('#nb').addEventListener('input', sync); sync();
+  const sync = () => { $('#ntc').textContent = `${$('#nt').value.length}/30`; $('#nbc').textContent = `${$('#nb').value.length}/80`; $('#pvT').textContent = $('#nt').value; $('#pvB').textContent = $('#nb').value; const ms = S.data.memberships.filter((m) => m.property === $('#np').value); $('#tgt').textContent = `${new Set(ms.map((m) => m.anonId)).size}人（通知オン ${ms.filter((m) => m.pushEnabled).length}人）`; };
+  $('#nt').addEventListener('input', sync); $('#nb').addEventListener('input', sync); $('#np').addEventListener('change', sync); sync();
   b.addEventListener('click', async () => {
     b.disabled = true; $('#nr').innerHTML = '';
     try {
       const r = await call('sendNotice')({ property: $('#np').value, title: $('#nt').value, body: $('#nb').value });
-      $('#nr').innerHTML = `<div class="banner ok">配信しました。対象の登録者 ${r.data.members}人／通知の宛先 ${r.data.pushTargets}件（成功 ${r.data.success}・失敗 ${r.data.failure}）</div>`;
-      await loadAll(); const msg = $('#nr').innerHTML; render(false); $('#nr').innerHTML = msg;
-    } catch (e) { $('#nr').innerHTML = `<div class="banner err">拒否されました／失敗しました：${esc(e.message)}</div>`; }
-    b.disabled = false;
+      await loadAll(); S.detail = null; S.tab = 'notices'; render();
+      $('#main').insertAdjacentHTML('afterbegin', `<div class="banner ok">配信しました。対象の登録者 ${r.data.members}人／通知の宛先 ${r.data.pushTargets}件（成功 ${r.data.success}・失敗 ${r.data.failure}）</div>`);
+    } catch (e) { $('#nr').innerHTML = `<div class="banner err">拒否されました／失敗しました：${esc(e.message)}</div>`; b.disabled = false; }
   });
 }
 
@@ -215,7 +226,7 @@ function tabInquiries() {
   const rows = all.filter((i) => st(i) === S.istatus);
   return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Inquiries</h1>
   <div class="seg" id="is">${[['new', `未対応 ${cnt('new')}`], ['doing', `対応中 ${cnt('doing')}`], ['done', `完了 ${cnt('done')}`]].map(([k, l]) => `<button data-v="${k}" class="${S.istatus === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-  <div>${rows.map((i) => { const c = pii[i.cid + '_' + i.property]; return `<div class="nrow" data-iid="${esc(i.id)}" style="display:flex;gap:12px;align-items:center">${avatar(c?.name)}<div style="flex:1;min-width:0"><div class="t">${esc(c?.name || '—')}　<span class="xs muted">受付 ${fmtDate(i.createdAt)}</span></div><div class="xs muted">${pn(i.property)}　${i.contactMethod === 'tel' ? '折り返し：電話' : i.contactMethod === 'mail' ? '折り返し：メール' : ''}</div><div class="xs">${esc(i.message || '')}</div></div>${st(i) === 'new' ? `<span class="xs" style="color:var(--danger)">${hoursAgo(i.createdAt)}</span>` : ''}</div>`; }).join('') || '<div class="muted small">該当する問い合わせは、ありません</div>'}</div>`;
+  <div>${rows.map((i) => { const c = pii[i.cid + '_' + i.property]; return `<div class="nrow" data-iid="${esc(i.id)}" style="display:flex;gap:12px;align-items:center">${avatar(c?.name)}<div style="flex:1;min-width:0"><div class="t">${esc(c?.name || '—')}　<span class="xs muted">受付 ${fmtDate(i.createdAt)}</span></div><div class="xs muted">${pn(i.property)}　${i.contactMethod === 'tel' ? '折り返し：電話' : i.contactMethod === 'mail' ? '折り返し：メール' : ''}</div><div class="xs">${esc(i.message || '')}</div></div>${st(i) === 'new' ? `<span class="xs" style="background:#f4dcd7;color:var(--danger);padding:2px 8px;border-radius:99px;white-space:nowrap">${hoursAgo(i.createdAt)}</span>` : ''}</div>`; }).join('') || '<div class="muted small">該当する問い合わせは、ありません</div>'}</div>`;
 }
 function bindInquiries() {
   $$('#is button').forEach((b) => b.addEventListener('click', () => { S.istatus = b.dataset.v; render(); }));
@@ -227,7 +238,7 @@ function detailInquiry() {
   const st = i.status || 'new';
   return `<button class="btn sm ghost" id="back">‹ 一覧へ</button>
   <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px">Member Support</h1>
-  <div style="margin:10px 0"><span class="tag ${st === 'new' ? 'red' : st === 'doing' ? 'gold' : ''}">${st === 'new' ? '未対応' : st === 'doing' ? '対応中' : '完了'}</span></div>
+  <div class="seg" style="margin:12px 0">${[['new', '未対応'], ['doing', '対応中'], ['done', '完了']].map(([k, l]) => `<button data-setst="${k}" class="${st === k ? 'on' : ''}">${l}</button>`).join('')}</div>
   <div style="font-family:var(--serif-jp);font-size:19px;margin-bottom:8px">${esc(c?.name || '—')} 様</div>
   <div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><span class="muted">電話</span><a href="tel:${esc(c?.phone)}">${esc(c?.phone)}</a></div>
   <div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><span class="muted">メール</span><a href="mailto:${esc(c?.email)}">${esc(c?.email)}</a></div>
@@ -240,6 +251,7 @@ function detailInquiry() {
 function bindInquiryDetail() {
   const set = (status) => async () => { try { await call('setInquiryStatus')({ id: S.detail.id, status, memo: $('#memo').value }); await loadAll(); render(); } catch (e) { $('#sres').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; } };
   $('#sdoing').addEventListener('click', set('doing')); $('#sdone').addEventListener('click', set('done'));
+  $$('[data-setst]').forEach((b) => b.addEventListener('click', set(b.dataset.setst)));
 }
 
 /* ---------- 来場予約（日別） ---------- */
@@ -247,10 +259,24 @@ function tabReservations() {
   if (!can.inquiries()) return '<div class="banner warn">この役割では、来場予約の内容は見えません。</div>';
   const d = S.data; const pii = Object.fromEntries(d.contacts.map((c) => [c.cid + '_' + c.property, c]));
   const vs = fd(d.inquiries).filter((i) => i.kind === 'visit').sort((a, b) => String(a.visitDate + a.timeSlot).localeCompare(String(b.visitDate + b.timeSlot)));
-  const by = {}; vs.forEach((v) => { (by[v.visitDate || '日付未定'] = by[v.visitDate || '日付未定'] || []).push(v); });
+  const dates = [...new Set(vs.map((v) => v.visitDate || '日付未定'))];
+  if (!S.rdate || !dates.includes(S.rdate)) S.rdate = dates[0];
+  const dow = ['日', '月', '火', '水', '木', '金', '土'];
+  const strip = dates.slice(0, 7).map((ds) => { const dt = new Date(ds); const ok = !isNaN(dt); return `<button data-rd="${esc(ds)}" class="${S.rdate === ds ? 'on' : ''}" style="flex:none;width:46px;height:58px;border:1px solid var(--line);background:${S.rdate === ds ? 'var(--green)' : 'var(--white)'};color:${S.rdate === ds ? '#fff' : 'var(--ink)'};font-family:inherit;cursor:pointer"><div class="xs">${ok ? dow[dt.getDay()] : ''}</div><div style="font-size:16px;font-weight:500">${ok ? dt.getDate() : '—'}</div></button>`; }).join('');
+  const day = vs.filter((v) => (v.visitDate || '日付未定') === S.rdate);
   return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Reservations</h1>
-  ${Object.keys(by).map((k) => `<h2 class="h2" style="margin-top:18px">${esc(k)}の予約 ${by[k].length}件</h2>${by[k].map((v) => { const c = pii[v.cid + '_' + v.property]; return `<div class="nrow" style="cursor:default;display:flex;gap:14px;align-items:center"><div style="font-family:var(--serif-en);font-size:20px;color:var(--green);width:62px">${esc(v.timeSlot || '—')}</div><div style="flex:1"><div class="t">${esc(c?.name || '—')}</div><div class="xs muted">${pn(v.property)}</div></div><span class="tag">${esc(v.guests || 1)}名</span></div>`; }).join('')}`).join('') || '<div class="muted small">来場予約は、まだありません</div>'}
-  <div class="note-info" style="background:#e3ebea;color:#4b6a65;padding:12px 14px;font-size:11px;margin-top:16px">来場後の操作はありません。予約した方は、タグ「来場予約者」で管理されます。</div>`;
+  ${dates.length ? `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px">${strip}</div><h2 class="h2" style="margin-top:14px">${esc(S.rdate)}の予約 ${day.length}件</h2>
+  ${day.map((v) => { const c = pii[v.cid + '_' + v.property]; return `<div class="nrow" style="cursor:default;display:flex;gap:14px;align-items:center"><div style="font-weight:700;font-size:18px;color:var(--green);width:62px">${esc(v.timeSlot || '—')}</div><div style="flex:1"><div class="t">${esc(c?.name || '—')}</div><div class="xs muted">経路：来場予約　${pn(v.property)}</div></div><span class="tag soft">${esc(v.guests || 1)}名</span></div>`; }).join('')}` : '<div class="muted small">来場予約は、まだありません</div>'}
+  <div style="background:var(--soft);color:#55594e;padding:12px 14px;font-size:11px;margin-top:16px">来場後の操作はありません。予約した方は、タグ「来場予約者」で管理されます。</div>`;
+}
+
+function tabMenu() {
+  const c = S.claims;
+  return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Management</h1>
+  <div style="background:var(--green);color:#fff;padding:16px;display:flex;gap:14px;align-items:center;margin-bottom:18px"><span style="width:44px;height:44px;background:var(--gold);display:grid;place-items:center;font-family:var(--serif-jp);font-size:18px">${esc(initial(S.user.displayName || roleName()))}</span><div><div>${esc(S.user.displayName || roleName())}</div><div class="xs" style="opacity:.8">${esc(roleName())}</div></div></div>
+  <div style="border-top:1px solid var(--line)">${menuItems().map(([k, l, d]) => `<a href="#" data-gotab="${k}" style="display:flex;justify-content:space-between;align-items:center;padding:16px 2px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit"><span><b style="font-weight:500">${l}</b><br><span class="xs muted">${d}</span></span><span class="muted">›</span></a>`).join('')}</div>
+  <p class="xs muted" style="margin-top:12px">${esc(roleSummary())}</p>
+  <button class="btn ghost" id="lo2" style="margin-top:18px;color:var(--danger);border-color:var(--danger)">ログアウト</button>`;
 }
 
 function tabEvents() {
@@ -261,48 +287,48 @@ function tabEvents() {
   ${rows.map((e) => `<tr><td>${fmtDate(e.ts)}</td><td class="mono">${esc(e.anonId)}</td><td>${pn(e.property)}</td><td>${esc(lab[e.type] || e.type)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">まだありません</td></tr>'}</tbody></table></div>`;
 }
 
+const AUDIT_JA = { sendNotice: ['通知を配信', '配信', '#2e7d5b'], sendNotice_denied: ['通知の配信を拒否', '権限', '#b3402f'], intake: ['登録フォームから登録', '登録', '#2f6db5'], property_create: ['物件を登録', '物件', '#997544'], property_update: ['物件を更新', '物件', '#997544'], property_archive: ['物件の掲載を停止', '物件', '#b3402f'], property_restore: ['物件の掲載を再開', '物件', '#2e7d5b'], staff_create: ['担当者を発行', '権限', '#b3402f'], staff_update: ['担当物件を変更', '権限', '#b3402f'], staff_disable: ['担当者を停止', '権限', '#b3402f'], staff_enable: ['担当者を再開', '権限', '#2e7d5b'], inquiry_status: ['問い合わせの状況を変更', '対応', '#2f6db5'] };
 function tabAdmin() {
   const d = S.data;
-  return `<h2 class="h2">操作記録（監査ログ）</h2><div class="scroll-x"><table class="t"><thead><tr><th>日時</th><th>操作</th><th>実行者</th><th>内容</th></tr></thead><tbody>
-  ${d.audit.slice(0, 60).map((a) => `<tr><td>${fmtDate(a.at)}</td><td>${esc(a.action)}</td><td class="mono">${esc(String(a.actor).slice(0, 10))}</td><td class="mono">${esc(JSON.stringify(a.detail || {}))}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">まだありません</td></tr>'}</tbody></table></div>`;
+  return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:12px">Audit Trail</h1>
+  <div style="background:var(--soft);padding:12px 14px;font-size:11px;margin-bottom:14px">いつ・誰が・何をしたかを記録しています。個人情報は、記録に含みません。</div>
+  <div>${d.audit.slice(0, 60).map((a) => { const j = AUDIT_JA[a.action] || [a.action, 'その他', '#7d7b6e']; const who = (d.staff || []).find((x) => x.id === a.actor); return `<div class="nrow" style="cursor:default;display:flex;gap:10px;align-items:center"><div style="flex:1"><div class="t" style="font-size:13px">${esc(j[0])}</div><div class="xs muted">${fmtDate(a.at)}　${esc(who ? who.displayName : a.actor === 'system' ? 'システム' : String(a.actor).slice(0, 8))}</div></div><span class="xs" style="background:${j[2]}22;color:${j[2]};padding:2px 8px;border-radius:2px">${j[1]}</span></div>`; }).join('') || '<div class="muted small">まだありません</div>'}</div>`;
 }
 
 /* ---------- ADEX専用：物件の登録・編集・掲載停止 ---------- */
 function thumb(id) { return `<div style="width:64px;height:64px;background:#cfc8b8 center/cover no-repeat;${imgOf(id) ? `background-image:url('${esc(imgOf(id))}')` : ''}"></div>`; }
 function tabProperties() {
   const counts = {}; S.data.memberships.forEach((m) => { counts[m.property] = (counts[m.property] || 0) + 1; });
-  return `<div class="card" style="margin-bottom:22px"><h2 class="h2" id="pfTitle">物件を登録する</h2>
-    <div class="grid4" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
-      <div class="field"><label>物件ID（半角英数・ハイフン。登録後は変更できません）</label><input class="input" id="pfId" placeholder="例：hakone-101" maxlength="31"></div>
-      <div class="field"><label>物件名</label><input class="input" id="pfName" maxlength="60" placeholder="例：レ・ジェイド箱根"></div>
-      <div class="field"><label>地域</label><select class="input" id="pfRegion">${REGIONS.map((r) => `<option>${r}</option>`).join('')}</select></div>
-      <div class="field"><label>エリア</label><input class="input" id="pfArea" maxlength="60" placeholder="例：神奈川県 箱根町"></div>
-      <div class="field"><label>種別</label><select class="input" id="pfKind"><option>新築</option><option>中古</option></select></div>
-      <div class="field"><label>公式サイトURL（https://）</label><input class="input" id="pfUrl" maxlength="300" placeholder="https://"></div>
-      <div class="field"><label>アプリ内の表示名（任意）</label><input class="input" id="pfApp" maxlength="60"></div>
-    </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn sm" id="pfSave">登録する</button><button class="btn sm ghost hidden" id="pfCancel">編集をやめる</button></div>
-    <div id="pfRes" style="margin-top:12px"></div></div>
-  <div class="scroll-x"><table class="t"><thead><tr><th></th><th>物件名</th><th>地域・エリア</th><th>登録者</th><th>状態</th><th>操作</th></tr></thead><tbody>
-  ${S.propDocs.map((p) => `<tr><td>${thumb(p.id)}</td><td><b>${esc(p.name)}</b><div class="mono muted">${esc(p.id)}</div></td><td>${esc(p.region || '')}<div class="xs muted">${esc(p.area || '')}</div></td><td>${counts[p.id] || 0}</td><td>${p.status === 'archived' ? '<span class="tag red">掲載停止</span>' : '<span class="tag">掲載中</span>'}</td>
-  <td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost" data-edit="${esc(p.id)}">編集</button>${p.status === 'archived' ? `<button class="btn sm ghost" data-restore="${esc(p.id)}">掲載を再開</button>` : `<button class="btn sm danger" data-archive="${esc(p.id)}">掲載を停止</button>`}</div></td></tr>`).join('')}</tbody></table></div>
-  <p class="xs muted" style="margin-top:8px">「掲載を停止」しても、登録者・問い合わせ・ログなどのデータは、削除されません（保管期間のルールに従います）。</p>`;
+  const act = S.propFilter === 'archived' ? S.propDocs.filter((p) => p.status === 'archived') : S.propDocs.filter((p) => p.status !== 'archived');
+  return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:12px">Residences</h1>
+  <div class="seg" id="pfTabs"><button data-v="active" class="${S.propFilter !== 'archived' ? 'on' : ''}">公開中 ${S.propDocs.filter((p) => p.status !== 'archived').length}</button><button data-v="archived" class="${S.propFilter === 'archived' ? 'on' : ''}">掲載停止 ${S.propDocs.filter((p) => p.status === 'archived').length}</button></div>
+  <div>${act.map((p) => `<div class="nrow" style="cursor:default;display:flex;gap:12px;align-items:center">${thumb(p.id).replace('width:64px;height:64px', 'width:44px;height:44px')}<div style="flex:1;min-width:0"><div class="t">${esc(p.name)}</div><div class="xs muted">${esc(p.kind || '')}　${esc(p.region || '')}　登録者${counts[p.id] || 0}人</div><div style="display:flex;gap:6px;margin-top:6px"><button class="btn sm ghost" data-edit="${esc(p.id)}">編集</button>${p.status === 'archived' ? `<button class="btn sm ghost" data-restore="${esc(p.id)}">掲載を再開</button>` : `<button class="btn sm danger" data-archive="${esc(p.id)}">掲載を停止</button>`}</div></div><span class="tag soft">${p.status === 'archived' ? '停止' : '公開中'}</span></div>`).join('') || '<div class="muted small">該当する物件は、ありません</div>'}</div>
+  <p class="xs muted">「掲載を停止」しても、登録者・問い合わせ・ログなどのデータは、削除されません（保管期間のルールに従います）。</p>
+  <button class="btn" id="newProp" style="margin-top:14px">＋ 物件を登録する</button>`;
+}
+function detailProperty() {
+  const p = S.detail.edit ? S.propDocs.find((x) => x.id === S.detail.edit) : null;
+  return `<button class="btn sm ghost" id="back">‹ 物件の一覧へ</button>
+  <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">${p ? 'Edit Residence' : 'New Residence'}</h1>
+    <div class="field"><label>物件ID（半角英数・ハイフン。登録後は変更できません）</label><input class="input" id="pfId" placeholder="例：hakone-101" maxlength="31" value="${esc(p?.id || '')}" ${p ? 'disabled' : ''}></div>
+    <div class="field"><label>物件名</label><input class="input" id="pfName" maxlength="60" placeholder="例：レ・ジェイド箱根" value="${esc(p?.name || '')}"></div>
+    <div class="field"><label>地域</label><select class="input" id="pfRegion">${REGIONS.map((r) => `<option ${p?.region === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
+    <div class="field"><label>エリア</label><input class="input" id="pfArea" maxlength="60" placeholder="例：神奈川県 箱根町" value="${esc(p?.area || '')}"></div>
+    <div class="field"><label>種別</label><select class="input" id="pfKind"><option ${p?.kind !== '中古' ? 'selected' : ''}>新築</option><option ${p?.kind === '中古' ? 'selected' : ''}>中古</option></select></div>
+    <div class="field"><label>公式サイトURL（https://）</label><input class="input" id="pfUrl" maxlength="300" placeholder="https://" value="${esc(p?.url || '')}"></div>
+    <div class="field"><label>アプリ内の表示名（任意）</label><input class="input" id="pfApp" maxlength="60" value="${esc(p?.appName || '')}"></div>
+    <button class="btn" id="pfSave">${p ? '保存する' : 'この内容で登録する'}</button><div id="pfRes" style="margin-top:12px"></div>`;
 }
 function bindProperties() {
   const f = (id) => $('#' + id);
-  const reset = () => { f('pfTitle').textContent = '物件を登録する'; f('pfId').disabled = false; ['pfId', 'pfName', 'pfArea', 'pfUrl', 'pfApp'].forEach((i) => { f(i).value = ''; }); f('pfSave').textContent = '登録する'; f('pfCancel').classList.add('hidden'); };
-  f('pfCancel').addEventListener('click', reset);
-  $$('[data-edit]').forEach((b) => b.addEventListener('click', () => {
-    const p = S.propDocs.find((x) => x.id === b.dataset.edit);
-    f('pfTitle').textContent = `物件を編集する（${p.name}）`; f('pfId').value = p.id; f('pfId').disabled = true; f('pfName').value = p.name || '';
-    f('pfRegion').value = p.region || REGIONS[0]; f('pfArea').value = p.area || ''; f('pfKind').value = p.kind || '新築'; f('pfUrl').value = p.url || ''; f('pfApp').value = p.appName || '';
-    f('pfSave').textContent = '保存する'; f('pfCancel').classList.remove('hidden'); window.scrollTo(0, 0);
-  }));
-  f('pfSave').addEventListener('click', async (e) => {
+  $$('#pfTabs button').forEach((b) => b.addEventListener('click', () => { S.propFilter = b.dataset.v; render(); }));
+  const np = $('#newProp'); if (np) np.addEventListener('click', () => { S.detail = { type: 'property' }; render(); window.scrollTo(0, 0); });
+  $$('[data-edit]').forEach((b) => b.addEventListener('click', () => { S.detail = { type: 'property', edit: b.dataset.edit }; render(); window.scrollTo(0, 0); }));
+  if (f('pfSave')) f('pfSave').addEventListener('click', async (e) => {
     e.target.disabled = true; f('pfRes').innerHTML = '';
     try {
       const r = await call('adminSaveProperty')({ id: f('pfId').value.trim(), name: f('pfName').value, region: f('pfRegion').value, area: f('pfArea').value, kind: f('pfKind').value, url: f('pfUrl').value, appName: f('pfApp').value });
-      await loadAll(); render(); $('#pfRes').innerHTML = `<div class="banner ok">${r.data.created ? '物件を登録しました' : '物件を更新しました'}</div>`;
+      await loadAll(); S.detail = null; render(); $('#main').insertAdjacentHTML('afterbegin', `<div class="banner ok">${r.data.created ? '物件を登録しました' : '物件を更新しました'}</div>`);
     } catch (err) { f('pfRes').innerHTML = `<div class="banner err">${esc(err.message)}</div>`; e.target.disabled = false; }
   });
   const setStatus = (attr, status, msg) => $$(`[${attr}]`).forEach((b) => b.addEventListener('click', async () => {
@@ -318,25 +344,32 @@ function bindProperties() {
 const propChecks = (name, sel = []) => `<div style="display:flex;flex-wrap:wrap;gap:6px 14px">${PROPS.map((p) => `<label style="font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" name="${name}" value="${esc(p)}" ${sel.includes(p) ? 'checked' : ''}>${esc(PNAMES[p] || p)}</label>`).join('')}</div>`;
 function tabStaff() {
   const rows = (S.data.staff || []).slice().sort((a, b) => String(a.email).localeCompare(String(b.email)));
-  return `<div class="card" style="margin-bottom:22px"><h2 class="h2">物件担当者のアカウントを発行する</h2>
-    <div class="grid4" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
-      <div class="field"><label>ID（メールアドレス）</label><input class="input" id="sfEmail" type="email" placeholder="例：tantou@example.com"></div>
-      <div class="field"><label>お名前</label><input class="input" id="sfName" maxlength="60"></div>
-    </div>
-    <div class="field"><label>担当する物件（複数選べます）</label>${propChecks('sfProp')}</div>
-    <button class="btn sm" id="sfCreate">発行する</button><div id="sfRes" style="margin-top:12px"></div></div>
-  <div class="scroll-x"><table class="t"><thead><tr><th>ID</th><th>お名前</th><th>役割</th><th>担当物件</th><th>状態</th><th>操作</th></tr></thead><tbody>
-  ${rows.map((s) => `<tr><td>${esc(s.email)}</td><td>${esc(s.displayName)}</td><td>${esc(ROLE_LABEL[s.role] || s.role)}</td><td>${(s.properties || []).map((p) => esc(PNAMES[p] || p)).join('・') || '全物件'}</td><td>${s.disabled ? '<span class="tag red">停止中</span>' : '<span class="tag">有効</span>'}</td>
-  <td>${s.role === 'staff' ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost" data-sedit="${esc(s.id)}">担当物件を変更</button>${s.disabled ? `<button class="btn sm ghost" data-son="${esc(s.id)}">再開</button>` : `<button class="btn sm danger" data-soff="${esc(s.id)}">停止</button>`}</div>` : '<span class="xs muted">—</span>'}</td></tr>`).join('')}</tbody></table></div>
-  <p class="xs muted" style="margin-top:8px">担当者のアカウントは、ADEXだけが発行・停止できます（担当者自身では作れません）。異動・退職のときは、すぐに「停止」してください。権限を変更すると、その担当者は、いったんログアウトされます。</p>`;
+  const grp = S.staffGroup || 'staff';
+  const show = rows.filter((s) => (grp === 'staff' ? s.role === 'staff' : s.role !== 'staff'));
+  return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:12px">Staff Accounts</h1>
+  <div class="seg" id="sgTabs"><button data-v="staff" class="${grp === 'staff' ? 'on' : ''}">物件担当者 ${rows.filter((s) => s.role === 'staff').length}</button><button data-v="other" class="${grp === 'other' ? 'on' : ''}">ADEX・QLEA・本社 ${rows.filter((s) => s.role !== 'staff').length}</button></div>
+  <div>${show.map((s) => `<div class="nrow" style="cursor:default;display:flex;gap:12px;align-items:center">${avatar(s.displayName)}<div style="flex:1;min-width:0"><div class="t">${esc(s.displayName)}</div><div class="xs muted">${esc(s.email)}<br>${(s.properties || []).map((p) => esc(PNAMES[p] || p)).join('・') || '全物件'}</div>${s.role === 'staff' ? `<div style="display:flex;gap:6px;margin-top:6px"><button class="btn sm ghost" data-sedit="${esc(s.id)}">担当物件を変更</button>${s.disabled ? `<button class="btn sm ghost" data-son="${esc(s.id)}">再開</button>` : `<button class="btn sm danger" data-soff="${esc(s.id)}">停止</button>`}</div>` : ''}</div><span class="tag ${s.disabled ? 'red' : 'soft'}">${s.disabled ? '停止中' : '有効'}</span></div>`).join('')}</div>
+  <p class="xs muted" style="margin-top:8px">担当者のアカウントは、ADEXだけが発行・停止できます。異動・退職のときは、すぐに「停止」してください。権限を変更すると、その担当者は、いったんログアウトされます。</p>
+  <button class="btn" id="newStaff" style="margin-top:14px">＋ 担当者を追加する</button>`;
 }
+function detailStaff() {
+  return `<button class="btn sm ghost" id="back">‹ 担当者の一覧へ</button>
+  <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">New Staff</h1>
+    <div class="field"><label>ID（メールアドレス）</label><input class="input" id="sfEmail" type="email" placeholder="例：tantou@example.com"></div>
+    <div class="field"><label>お名前</label><input class="input" id="sfName" maxlength="60"></div>
+    <div class="field"><label>担当する物件（複数選べます）</label>${propChecks('sfProp')}</div>
+    <button class="btn" id="sfCreate">発行する</button><div id="sfRes" style="margin-top:12px"></div>`;
+}
+
 function bindStaff() {
   const picked = (name, root = document) => [...root.querySelectorAll(`input[name="${name}"]:checked`)].map((x) => x.value);
-  $('#sfCreate').addEventListener('click', async (e) => {
+  $$('#sgTabs button').forEach((b) => b.addEventListener('click', () => { S.staffGroup = b.dataset.v; render(); }));
+  const ns = $('#newStaff'); if (ns) ns.addEventListener('click', () => { S.detail = { type: 'newstaff' }; render(); window.scrollTo(0, 0); });
+  if ($('#sfCreate')) $('#sfCreate').addEventListener('click', async (e) => {
     e.target.disabled = true; $('#sfRes').innerHTML = '';
     try {
       const r = await call('adminCreateStaff')({ email: $('#sfEmail').value, name: $('#sfName').value, properties: picked('sfProp') });
-      await loadAll(); render();
+      await loadAll();
       $('#sfRes').innerHTML = `<div class="banner ok"><b>発行しました。</b>この画面を閉じると、パスワードは、二度と表示されません。<br>ID：<span class="mono">${esc(r.data.email)}</span>　パスワード：<span class="mono">${esc(r.data.password)}</span><br><span class="xs">安全な方法（直接・パスワード管理ツールなど）で、本人にお伝えください。</span></div>`;
     } catch (err) { $('#sfRes').innerHTML = `<div class="banner err">${esc(err.message)}</div>`; e.target.disabled = false; }
   });
@@ -361,16 +394,27 @@ function bindStaff() {
 }
 
 function render(full = true) {
-  const views = { overview: tabOverview, members: tabMembers, notices: tabNotices, inquiries: tabInquiries, reservations: tabReservations, events: tabEvents, admin: tabAdmin, properties: tabProperties, staff: tabStaff };
-  const inner = S.detail ? (S.detail.type === 'member' ? detailMember() : detailInquiry()) : views[S.tab]();
+  const views = { overview: tabOverview, members: tabMembers, notices: tabNotices, inquiries: tabInquiries, reservations: tabReservations, events: tabEvents, admin: tabAdmin, properties: tabProperties, staff: tabStaff, menu: tabMenu };
+  const dv = { member: detailMember, inq: detailInquiry, compose: detailCompose, property: detailProperty, newstaff: detailStaff };
+  const inner = S.detail ? dv[S.detail.type]() : views[S.tab]();
   shell(inner);
   const back = $('#back'); if (back) back.addEventListener('click', () => { S.detail = null; render(); });
-  if (S.detail) { if (S.detail.type === 'inq') bindInquiryDetail(); return; }
+  $$('[data-soon]').forEach((b) => b.addEventListener('click', () => alert(`「${b.dataset.soon}」は、これから作ります。`)));
+  const lo = $('#lo2'); if (lo) lo.addEventListener('click', () => signOut(auth));
+  if (S.detail) {
+    if (S.detail.type === 'inq') bindInquiryDetail();
+    if (S.detail.type === 'compose') bindCompose();
+    if (S.detail.type === 'property') bindProperties();
+    if (S.detail.type === 'newstaff') bindStaff();
+    return;
+  }
   if (S.tab === 'members') bindMembers();
   if (S.tab === 'inquiries') bindInquiries();
   if (S.tab === 'notices') bindNotices();
   if (S.tab === 'properties') bindProperties();
   if (S.tab === 'staff') bindStaff();
+  $$('[data-rd]').forEach((b) => b.addEventListener('click', () => { S.rdate = b.dataset.rd; render(); }));
+  if (MENU_TABS.includes(S.tab)) { const mb = document.createElement('div'); mb.style.cssText = 'margin-bottom:10px'; mb.innerHTML = '<button class="btn sm ghost" id="toMenu">‹ メニュー</button>'; $('#main').prepend(mb); $('#toMenu').addEventListener('click', () => { S.tab = 'menu'; render(); }); }
 }
 
 onAuthStateChanged(auth, async (u) => {
