@@ -60,7 +60,7 @@ for (const [email, role, own] of USERS) {
 }
 
 console.log('\n■ 通知の配信（sendNotice）');
-const SEND = [['adex@primepass.test', 'hayama24', '成功'], ['qlea@primepass.test', 'hayama24', '拒否'], ['escon@primepass.test', 'hayama24', '拒否'], ['staff1@primepass.test', 'hayama24', '成功'], ['staff1@primepass.test', 'meguro62', '拒否'], ['staff2@primepass.test', 'meguro62', '成功'], ['staff2@primepass.test', 'hayama24', '拒否'], ['staff3@primepass.test', 'hayama24', '拒否']];
+const SEND = [['adex@primepass.test', 'hayama24', '成功'], ['qlea@primepass.test', 'hayama24', '拒否'], ['escon@primepass.test', 'hayama24', '拒否'], ['staff1@primepass.test', 'hayama24', '成功'], ['staff1@primepass.test', 'meguro62', '拒否'], ['staff2@primepass.test', 'meguro62', '拒否'], ['staff2@primepass.test', 'hayama24', '拒否'], ['staff3@primepass.test', 'hayama24', '拒否']];
 for (const [email, p, ex] of SEND) {
   const tok = await signIn(email);
   const got = await callFn(tok, 'sendNotice', { property: p, title: `[自動テスト] ${email}`, body: 'verify' });
