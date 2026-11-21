@@ -10,7 +10,7 @@ let PROPS = [];
 let PNAMES = {};
 const REGIONS = ['首都圏', '関西', '西日本', '九州・沖縄', '北海道', '中部', '海外'];
 const ROLE_LABEL = { adex: 'ADEX', qlea: 'QLEA', escon: 'ES CON本社', staff: '物件担当者' };
-const S = { claims: null, user: null, tab: 'overview', data: {}, propDocs: [], assets: {} };
+const S = { claims: null, user: null, tab: 'overview', data: {}, propDocs: [], assets: {}, prop: 'all', detail: null, q: '', mfilter: 'all', istatus: 'new' };
 const imgOf = (id) => S.assets[assetKey(id)] || '';
 
 const roleName = () => {
@@ -80,7 +80,7 @@ async function loadAll() {
 
 /* ---------- 画面 ---------- */
 const TABS = () => [
-  ['overview', 'ダッシュボード'], ['members', '登録者'], ['notices', 'お知らせ配信'], ['inquiries', '問い合わせ'], ['events', '行動ログ'],
+  ['overview', 'ダッシュボード'], ['members', '登録者'], ['notices', 'お知らせ配信'], ['inquiries', '問い合わせ'], ['reservations', '来場予約'], ['events', '行動ログ'],
   ...(can.manage() ? [['properties', '物件'], ['staff', '担当者'], ['admin', '操作記録']] : []),
 ];
 function shell(inner) {
@@ -88,29 +88,39 @@ function shell(inner) {
     <div class="admin-head">
       <div><div class="brand"><span class="mark">P</span>PRIME PASS <span class="xs muted" style="letter-spacing:.04em;font-family:var(--sans)">管理画面</span></div>
         <div class="pill-row"><span class="role-pill">ログイン中：<b>${esc(roleName())}</b></span><span class="tag gold" style="align-self:center">${ENV_LABEL}</span></div></div>
-      <button class="btn sm ghost" id="lo">ログアウト</button>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${scope().length > 1 ? `<select class="selector" id="propSel" style="margin:0"><option value="all">すべての物件</option>${scope().map((p) => `<option value="${esc(p)}" ${S.prop === p ? 'selected' : ''}>${esc(PNAMES[p] || p)}</option>`).join('')}</select>` : ''}<button class="btn sm ghost" id="lo">ログアウト</button></div>
     </div>
     <div class="navtabs">${TABS().map(([k, l]) => `<button data-t="${k}" class="${S.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div id="main">${inner}</div></div>`;
   $('#lo').addEventListener('click', () => signOut(auth));
-  $$('.navtabs button').forEach((b) => b.addEventListener('click', () => { S.tab = b.dataset.t; render(); }));
+  const ps = $('#propSel'); if (ps) ps.addEventListener('change', () => { S.prop = ps.value; S.detail = null; render(); });
+  $$('[data-gotab]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); S.tab = a.dataset.gotab; S.detail = null; render(); }));
+  $$('.navtabs button').forEach((b) => b.addEventListener('click', () => { S.tab = b.dataset.t; S.detail = null; render(); }));
 }
 const pn = (p) => esc(PNAMES[p] || p);
 const ago = (ts, days) => (ts?.toMillis?.() || 0) > Date.now() - days * 86400000;
 
+const fd = (arr) => (S.prop === 'all' ? arr : arr.filter((x) => x.property === S.prop));
+const initial = (s) => String(s || '?').replace(/\s/g, '').charAt(0);
+const avatar = (s) => `<span style="width:38px;height:38px;background:var(--soft);color:var(--green);display:grid;place-items:center;font-family:var(--serif-jp);font-size:15px;flex:none">${esc(initial(s))}</span>`;
+const TAGL = { entry: '会員登録', document: '資料請求', visit: '来場予約' };
+const hoursAgo = (ts) => { const h = Math.floor((Date.now() - (ts?.toMillis?.() || Date.now())) / 3600000); return h < 1 ? '1時間以内' : h < 24 ? `${h}時間経過` : `${Math.floor(h / 24)}日経過`; };
+const stat = (label, n, sub = '', red = false) => `<div class="stat"><div class="l">${label}</div><div class="n" style="${red ? 'color:var(--danger)' : ''}">${n}</div>${sub ? `<div class="xs muted">${sub}</div>` : ''}</div>`;
+const goTab = (t, l) => `<a href="#" data-gotab="${t}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 4px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit"><span>${l}</span><span class="muted">›</span></a>`;
+
 function tabOverview() {
-  const d = S.data;
-  const uniq = new Set(d.memberships.map((m) => m.anonId)).size;
-  const push = d.memberships.filter((m) => m.pushEnabled).length;
-  const ev7 = d.events.filter((e) => ago(e.ts, 7)).length;
-  return `<div class="grid4">
-    <div class="stat"><div class="l">登録者（人）</div><div class="n">${uniq}</div></div>
-    <div class="stat"><div class="l">物件ごとの登録（件）</div><div class="n">${d.memberships.length}</div></div>
-    <div class="stat"><div class="l">通知オン（件）</div><div class="n">${push}</div></div>
-    <div class="stat"><div class="l">直近7日のアクセス</div><div class="n">${ev7}</div></div>
-    ${can.inquiries() ? `<div class="stat"><div class="l">未対応の問い合わせ</div><div class="n">${d.inquiries.filter((i) => i.status === 'new').length}</div></div>` : ''}
-    <div class="stat"><div class="l">配信したお知らせ</div><div class="n">${d.notices.length}</div></div>
-  </div>
+  const d = S.data; const mem = fd(d.memberships); const ev = fd(d.events); const nt = fd(d.notices); const inq = fd(d.inquiries);
+  const uniq = new Set(mem.map((m) => m.anonId)).size;
+  const push = mem.filter((m) => m.pushEnabled).length;
+  const newInq = inq.filter((i) => i.status === 'new' || !i.status);
+  const visits = inq.filter((i) => i.kind === 'visit' && i.status !== 'done');
+  const recent = nt.slice().sort((a, b) => (b.publishedAt?.toMillis?.() || 0) - (a.publishedAt?.toMillis?.() || 0)).slice(0, 3);
+  return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Dashboard</h1>
+  <div class="grid4">${stat('登録者', uniq, `物件ごとの登録 ${mem.length}件`)}${can.inquiries() ? stat('未対応の問い合わせ', newInq.length, newInq.length ? '要対応' : '', newInq.length > 0) : ''}${stat('通知オン', push, `登録の ${mem.length ? Math.round((push / mem.length) * 100) : 0}%`)}${stat('直近7日のアクセス', ev.filter((e) => ago(e.ts, 7)).length)}</div>
+  <h2 class="h2" style="margin-top:26px">今日やること</h2>
+  <div style="border-top:1px solid var(--line)">${can.inquiries() ? goTab('inquiries', `未対応の問い合わせ ${newInq.length}件`) + goTab('reservations', `来場予約 ${visits.length}件`) : ''}${goTab('members', `通知オフの登録者 ${mem.length - push}件`)}</div>
+  <h2 class="h2" style="margin-top:26px">最近の配信</h2>
+  <div>${recent.length ? recent.map((n) => `<div class="nrow" style="cursor:default"><div class="meta"><span class="tag">${pn(n.property)}</span><span>${fmtDate(n.publishedAt)}</span></div><div class="t">${esc(n.title)}</div>${n.stats ? `<div class="xs muted" style="margin-top:4px">対象 ${n.stats.members}人／到達 ${n.stats.success}件（宛先 ${n.stats.pushTargets}）</div>` : ''}</div>`).join('') : '<div class="muted small">まだありません</div>'}</div>
   <h2 class="h2" style="margin-top:26px">物件ごとの登録者</h2>
   <div class="grid4" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">${S.propDocs.filter((p) => p.status !== 'archived' && scope().includes(p.id)).map((p) => `<div class="stat" style="padding:0"><div style="height:90px;background:#cfc8b8 center/cover no-repeat;${imgOf(p.id) ? `background-image:url('${esc(imgOf(p.id))}')` : ''}"></div><div style="padding:10px 12px"><div class="xs">${esc(p.name)}</div><div class="n" style="font-size:28px">${d.memberships.filter((m) => m.property === p.id).length}</div></div></div>`).join('')}</div>
   <h2 class="h2" style="margin-top:26px">あなたの権限（${esc(roleName())}）</h2>
@@ -127,53 +137,124 @@ function roleSummary() {
   return m[r];
 }
 
+/* ---------- 登録者（検索・絞り込み・詳細） ---------- */
 function tabMembers() {
   const d = S.data; const showPII = can.contacts();
   const pii = Object.fromEntries(d.contacts.map((c) => [c.id, c]));
-  const rows = d.memberships.slice().sort((a, b) => (b.joinedAt?.toMillis?.() || 0) - (a.joinedAt?.toMillis?.() || 0));
-  return `${showPII ? '' : '<div class="banner warn">この役割では、名前・メール・電話は見えません（匿名IDのみ）。</div>'}
-  <div class="scroll-x"><table class="t"><thead><tr><th>匿名ID</th><th>物件</th>${showPII ? '<th>お名前</th><th>メール</th><th>電話</th>' : ''}<th>登録日</th><th>通知</th><th>最終アクセス</th></tr></thead><tbody>
-  ${rows.map((m) => { const c = pii[m.cid + '_' + m.property]; return `<tr><td class="mono">${esc(m.anonId)}</td><td>${pn(m.property)}</td>${showPII ? `<td>${esc(c?.name)}</td><td>${esc(c?.email)}</td><td>${esc(c?.phone)}</td>` : ''}<td>${fmtDate(m.joinedAt)}</td><td>${m.pushEnabled ? '<span class="tag">オン</span>' : '<span class="tag red">オフ</span>'}</td><td>${fmtDate(m.lastSeenAt)}</td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">登録者は、まだいません</td></tr>'}
-  </tbody></table></div>`;
+  const q = (S.q || '').trim().toLowerCase();
+  let rows = fd(d.memberships).slice().sort((a, b) => (b.joinedAt?.toMillis?.() || 0) - (a.joinedAt?.toMillis?.() || 0));
+  if (S.mfilter !== 'all') rows = rows.filter((m) => (m.tags || []).includes(S.mfilter));
+  if (q) rows = rows.filter((m) => { const c = pii[m.cid + '_' + m.property] || {}; return [m.anonId, c.name, c.email, c.phone].join(' ').toLowerCase().includes(q); });
+  return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:12px">Members</h1>
+  ${showPII ? '' : '<div class="banner warn">この役割では、名前・メール・電話は見えません（匿名IDのみ）。</div>'}
+  <input class="input" id="mq" placeholder="${showPII ? '名前・メール・電話で探す' : '匿名IDで探す'}" value="${esc(S.q || '')}">
+  <div class="chips" id="mf" style="margin:12px 0">${[['all', 'すべて'], ['entry', '会員登録'], ['document', '資料請求'], ['visit', '来場予約']].map(([k, l]) => `<button class="chip ${S.mfilter === k ? 'on' : ''}" data-v="${k}">${l}</button>`).join('')}</div>
+  <div class="xs muted" style="margin-bottom:8px">${rows.length}件　／　最終アクセスが新しい順ではなく、登録が新しい順</div>
+  <div>${rows.map((m) => { const c = pii[m.cid + '_' + m.property]; return `<div class="nrow" data-mid="${esc(m.cid + '_' + m.property)}" style="display:flex;gap:12px;align-items:center">${avatar(showPII ? c?.name : 'M')}<div style="flex:1;min-width:0"><div class="t">${showPII ? esc(c?.name || '—') : `<span class="mono">${esc(m.anonId)}</span>`}</div><div class="xs muted">${pn(m.property)}　${(m.tags || []).map((t) => `<span class="tag">${esc(TAGL[t] || t)}</span>`).join(' ')}</div></div><div class="xs muted" style="text-align:right">${fmtDate(m.joinedAt)}<br>${m.pushEnabled ? '通知オン' : '<span style="color:var(--danger)">通知オフ</span>'}</div></div>`; }).join('') || '<div class="muted small">該当する登録者は、いません</div>'}</div>`;
+}
+function bindMembers() {
+  $('#mq').addEventListener('input', (e) => { S.q = e.target.value; const pos = e.target.selectionStart; render(); const el = $('#mq'); el.focus(); el.setSelectionRange(pos, pos); });
+  $$('#mf .chip').forEach((b) => b.addEventListener('click', () => { S.mfilter = b.dataset.v; render(); }));
+  $$('[data-mid]').forEach((r) => r.addEventListener('click', () => { S.detail = { type: 'member', id: r.dataset.mid }; render(); window.scrollTo(0, 0); }));
+}
+function detailMember() {
+  const d = S.data; const m = d.memberships.find((x) => x.cid + '_' + x.property === S.detail.id); if (!m) { S.detail = null; return tabMembers(); }
+  const c = d.contacts.find((x) => x.id === S.detail.id); const showPII = can.contacts();
+  const evs = d.events.filter((e) => e.anonId === m.anonId).sort((a, b) => (b.ts?.toMillis?.() || 0) - (a.ts?.toMillis?.() || 0)).slice(0, 10);
+  const lab = { open: 'アプリを開いた', notice_open: 'お知らせを開いた', checkin: 'ホーム画面から起動（チェックイン）' };
+  const regs = d.memberships.filter((x) => x.cid === m.cid);
+  return `<button class="btn sm ghost" id="back">‹ 登録者の一覧へ</button>
+  <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px">Member Profile</h1>
+  <div style="display:flex;gap:12px;align-items:center;margin:16px 0">${avatar(showPII ? c?.name : 'M')}<div><div style="font-family:var(--serif-jp);font-size:19px">${showPII ? esc(c?.name || '—') + ' 様' : `<span class="mono">${esc(m.anonId)}</span>`}</div><div>${(m.tags || []).map((t) => `<span class="tag">${esc(TAGL[t] || t)}</span>`).join(' ')} <span class="tag dark">会員</span></div></div></div>
+  ${showPII ? `<div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><span class="muted">電話</span><a href="tel:${esc(c?.phone)}">${esc(c?.phone)}</a></div><div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><span class="muted">メール</span><a href="mailto:${esc(c?.email)}">${esc(c?.email)}</a></div><p class="xs muted" style="margin-top:8px">個人情報の閲覧は、ES CONの担当者・ADEXのみです。</p>` : '<div class="banner warn">個人情報は、この役割では見えません。</div>'}
+  <h2 class="h2" style="margin-top:24px">登録している物件</h2><div class="chips">${regs.map((x) => `<span class="tag dark">${pn(x.property)}</span>`).join('')}</div>
+  <h2 class="h2" style="margin-top:24px">行動の履歴</h2>
+  <div class="list">${evs.map((e) => `<div class="list-item" style="cursor:default"><div><div class="t" style="font-size:13px">${esc(lab[e.type] || e.type)}</div><div class="d">${pn(e.property)}　${fmtDate(e.ts)}</div></div></div>`).join('') || '<div class="muted small">まだありません</div>'}</div>`;
 }
 
+/* ---------- お知らせ配信（作成・プレビュー・結果） ---------- */
 function tabNotices() {
   const d = S.data;
-  const list = d.notices.slice().sort((a, b) => (b.publishedAt?.toMillis?.() || 0) - (a.publishedAt?.toMillis?.() || 0));
-  return `<div class="card" style="margin-bottom:22px"><h2 class="h2">お知らせを作成して、配信する</h2>
+  const list = fd(d.notices).slice().sort((a, b) => (b.publishedAt?.toMillis?.() || 0) - (a.publishedAt?.toMillis?.() || 0));
+  return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Notifications</h1>
+  <div class="card" style="margin-bottom:22px"><h2 class="h2">通知を作る</h2>
     ${can.send() ? '' : `<div class="banner warn">この役割（${esc(roleName())}）では、通知を配信できません。配信しようとすると、拒否されます（権限のテスト用に、送信ボタンは使えます）。</div>`}
-    <div class="field"><label>物件</label><select class="input" id="np">${PROPS.map((p) => `<option value="${p}">${pn(p)}</option>`).join('')}</select>
+    <div class="field"><label>物件</label><select class="input" id="np">${PROPS.map((p) => `<option value="${esc(p)}" ${S.prop === p ? 'selected' : ''}>${pn(p)}</option>`).join('')}</select>
       <div class="xs muted" style="margin-top:4px">※自分の担当ではない物件を選ぶと、サーバーが拒否します（権限のテスト）</div></div>
-    <div class="field"><label>タイトル</label><input class="input" id="nt" maxlength="80" value="限定間取りを追加しました（テスト）"></div>
-    <div class="field"><label>本文</label><textarea class="input" id="nb" maxlength="300">テスト配信です。会員限定の最新情報を、ご確認ください。</textarea></div>
-    <button class="btn" id="ns" style="max-width:280px">配信する</button><div id="nr" style="margin-top:12px"></div></div>
-    <h2 class="h2">配信したお知らせ</h2>
-    <div class="scroll-x"><table class="t"><thead><tr><th>日付</th><th>物件</th><th>タイトル</th><th>配信した役割</th></tr></thead><tbody>
-    ${list.map((n) => `<tr><td>${fmtDate(n.publishedAt)}</td><td>${pn(n.property)}</td><td>${esc(n.title)}</td><td>${esc(n.createdByRole)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">まだありません</td></tr>'}</tbody></table></div>`;
+    <div class="field"><label>タイトル（30文字まで）　<span id="ntc" class="xs">0/30</span></label><input class="input" id="nt" maxlength="30" value="限定間取りを追加しました"></div>
+    <div class="field"><label>本文（80文字まで）　<span id="nbc" class="xs">0/80</span></label><textarea class="input" id="nb" maxlength="80">限定の間取りを公開しました。アプリでご覧ください。</textarea></div>
+    <div class="xs muted" style="margin-bottom:10px">通知の文面には、お客様の氏名などの個人情報は入りません。</div>
+    <h2 class="h2" style="margin-top:6px">端末での見え方</h2>
+    <div style="background:var(--green);padding:14px;margin-bottom:14px"><div style="background:#fff;padding:10px 12px;display:flex;gap:10px"><span style="width:30px;height:30px;background:var(--gold);color:#fff;display:grid;place-items:center;font-family:var(--serif-en)">P</span><div><div class="xs muted">PRIME PASS　今</div><div id="pvT" style="font-weight:500;font-size:13px"></div><div id="pvB" class="xs"></div></div></div></div>
+    <button class="btn" id="ns" style="max-width:300px">配信する</button><div id="nr" style="margin-top:12px"></div></div>
+  <h2 class="h2">配信したお知らせ</h2>
+  <div>${list.map((n) => `<div class="nrow" style="cursor:default"><div class="meta"><span class="tag">${pn(n.property)}</span><span>${fmtDate(n.publishedAt)}</span><span class="tag gold">${esc(ROLE_LABEL[n.createdByRole] || n.createdByRole)}</span></div><div class="t">${esc(n.title)}</div>${n.stats ? `<div class="xs muted" style="margin-top:4px">対象 ${n.stats.members}人／宛先 ${n.stats.pushTargets}件／到達 ${n.stats.success}件${n.stats.failure ? `／失敗 ${n.stats.failure}件` : ''}</div>` : ''}</div>`).join('') || '<div class="muted small">まだありません</div>'}</div>`;
 }
 function bindNotices() {
   const b = $('#ns'); if (!b) return;
+  const sync = () => { $('#ntc').textContent = `${$('#nt').value.length}/30`; $('#nbc').textContent = `${$('#nb').value.length}/80`; $('#pvT').textContent = $('#nt').value; $('#pvB').textContent = $('#nb').value; };
+  $('#nt').addEventListener('input', sync); $('#nb').addEventListener('input', sync); sync();
   b.addEventListener('click', async () => {
     b.disabled = true; $('#nr').innerHTML = '';
     try {
       const r = await call('sendNotice')({ property: $('#np').value, title: $('#nt').value, body: $('#nb').value });
       $('#nr').innerHTML = `<div class="banner ok">配信しました。対象の登録者 ${r.data.members}人／通知の宛先 ${r.data.pushTargets}件（成功 ${r.data.success}・失敗 ${r.data.failure}）</div>`;
-      await loadAll(); render(false);
+      await loadAll(); const msg = $('#nr').innerHTML; render(false); $('#nr').innerHTML = msg;
     } catch (e) { $('#nr').innerHTML = `<div class="banner err">拒否されました／失敗しました：${esc(e.message)}</div>`; }
     b.disabled = false;
   });
 }
 
+/* ---------- 問い合わせ（状況別・詳細・対応メモ） ---------- */
 function tabInquiries() {
   if (!can.inquiries()) return '<div class="banner warn">この役割では、問い合わせの内容は見えません（QLEA・ES CON本社は不可）。</div>';
   const d = S.data; const pii = Object.fromEntries(d.contacts.map((c) => [c.cid + '_' + c.property, c]));
-  const rows = d.inquiries.slice().sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
-  return `<div class="scroll-x"><table class="t"><thead><tr><th>受付日</th><th>物件</th><th>種類</th><th>お名前</th><th>内容</th><th>希望</th></tr></thead><tbody>
-  ${rows.map((q) => { const c = pii[q.cid + '_' + q.property]; return `<tr><td>${fmtDate(q.createdAt)}</td><td>${pn(q.property)}</td><td>${q.kind === 'visit' ? '<span class="tag gold">来場予約</span>' : '<span class="tag">相談</span>'}</td><td>${esc(c?.name || '—')}</td><td>${esc(q.message || (q.kind === 'visit' ? `${q.visitDate} ${q.timeSlot}（${q.guests}名）` : ''))}</td><td>${esc(q.contactMethod === 'tel' ? '電話' : q.contactMethod === 'mail' ? 'メール' : '')}</td></tr>`; }).join('') || '<tr><td colspan="6" class="muted">まだありません</td></tr>'}</tbody></table></div>`;
+  const all = fd(d.inquiries).filter((i) => i.kind !== 'visit').slice().sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+  const st = (i) => i.status || 'new';
+  const cnt = (k) => all.filter((i) => st(i) === k).length;
+  const rows = all.filter((i) => st(i) === S.istatus);
+  return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Inquiries</h1>
+  <div class="seg" id="is">${[['new', `未対応 ${cnt('new')}`], ['doing', `対応中 ${cnt('doing')}`], ['done', `完了 ${cnt('done')}`]].map(([k, l]) => `<button data-v="${k}" class="${S.istatus === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+  <div>${rows.map((i) => { const c = pii[i.cid + '_' + i.property]; return `<div class="nrow" data-iid="${esc(i.id)}" style="display:flex;gap:12px;align-items:center">${avatar(c?.name)}<div style="flex:1;min-width:0"><div class="t">${esc(c?.name || '—')}　<span class="xs muted">受付 ${fmtDate(i.createdAt)}</span></div><div class="xs muted">${pn(i.property)}　${i.contactMethod === 'tel' ? '折り返し：電話' : i.contactMethod === 'mail' ? '折り返し：メール' : ''}</div><div class="xs">${esc(i.message || '')}</div></div>${st(i) === 'new' ? `<span class="xs" style="color:var(--danger)">${hoursAgo(i.createdAt)}</span>` : ''}</div>`; }).join('') || '<div class="muted small">該当する問い合わせは、ありません</div>'}</div>`;
+}
+function bindInquiries() {
+  $$('#is button').forEach((b) => b.addEventListener('click', () => { S.istatus = b.dataset.v; render(); }));
+  $$('[data-iid]').forEach((r) => r.addEventListener('click', () => { S.detail = { type: 'inq', id: r.dataset.iid }; render(); window.scrollTo(0, 0); }));
+}
+function detailInquiry() {
+  const d = S.data; const i = d.inquiries.find((x) => x.id === S.detail.id); if (!i) { S.detail = null; return tabInquiries(); }
+  const c = d.contacts.find((x) => x.cid === i.cid && x.property === i.property);
+  const st = i.status || 'new';
+  return `<button class="btn sm ghost" id="back">‹ 一覧へ</button>
+  <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px">Member Support</h1>
+  <div style="margin:10px 0"><span class="tag ${st === 'new' ? 'red' : st === 'doing' ? 'gold' : ''}">${st === 'new' ? '未対応' : st === 'doing' ? '対応中' : '完了'}</span></div>
+  <div style="font-family:var(--serif-jp);font-size:19px;margin-bottom:8px">${esc(c?.name || '—')} 様</div>
+  <div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><span class="muted">電話</span><a href="tel:${esc(c?.phone)}">${esc(c?.phone)}</a></div>
+  <div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><span class="muted">メール</span><a href="mailto:${esc(c?.email)}">${esc(c?.email)}</a></div>
+  <div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><span class="muted">相談したい物件</span><span>${pn(i.property)}</span></div>
+  <div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><span class="muted">折り返しのご希望</span><span>${i.contactMethod === 'tel' ? '電話' : 'メール'}（${esc({ am: '午前', pm: '午後', eve: '夕方', any: 'いつでも' }[i.timeSlot] || i.timeSlot || '')}）</span></div>
+  ${i.message ? `<div class="card" style="margin-top:14px">${esc(i.message)}</div>` : ''}
+  <div class="field" style="margin-top:16px"><label>対応メモ</label><textarea class="input" id="memo" maxlength="300" placeholder="例：折り返し予定　本日15時ごろ">${esc(i.memo || '')}</textarea></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn ghost" style="width:auto;padding:0 22px" href="tel:${esc(c?.phone)}">電話する</a><button class="btn" style="width:auto;padding:0 22px" id="sdoing">対応中にする</button><button class="btn ghost" style="width:auto;padding:0 22px" id="sdone">完了にする</button></div><div id="sres" style="margin-top:12px"></div>`;
+}
+function bindInquiryDetail() {
+  const set = (status) => async () => { try { await call('setInquiryStatus')({ id: S.detail.id, status, memo: $('#memo').value }); await loadAll(); render(); } catch (e) { $('#sres').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; } };
+  $('#sdoing').addEventListener('click', set('doing')); $('#sdone').addEventListener('click', set('done'));
+}
+
+/* ---------- 来場予約（日別） ---------- */
+function tabReservations() {
+  if (!can.inquiries()) return '<div class="banner warn">この役割では、来場予約の内容は見えません。</div>';
+  const d = S.data; const pii = Object.fromEntries(d.contacts.map((c) => [c.cid + '_' + c.property, c]));
+  const vs = fd(d.inquiries).filter((i) => i.kind === 'visit').sort((a, b) => String(a.visitDate + a.timeSlot).localeCompare(String(b.visitDate + b.timeSlot)));
+  const by = {}; vs.forEach((v) => { (by[v.visitDate || '日付未定'] = by[v.visitDate || '日付未定'] || []).push(v); });
+  return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Reservations</h1>
+  ${Object.keys(by).map((k) => `<h2 class="h2" style="margin-top:18px">${esc(k)}の予約 ${by[k].length}件</h2>${by[k].map((v) => { const c = pii[v.cid + '_' + v.property]; return `<div class="nrow" style="cursor:default;display:flex;gap:14px;align-items:center"><div style="font-family:var(--serif-en);font-size:20px;color:var(--green);width:62px">${esc(v.timeSlot || '—')}</div><div style="flex:1"><div class="t">${esc(c?.name || '—')}</div><div class="xs muted">${pn(v.property)}</div></div><span class="tag">${esc(v.guests || 1)}名</span></div>`; }).join('')}`).join('') || '<div class="muted small">来場予約は、まだありません</div>'}
+  <div class="note-info" style="background:#e3ebea;color:#4b6a65;padding:12px 14px;font-size:11px;margin-top:16px">来場後の操作はありません。予約した方は、タグ「来場予約者」で管理されます。</div>`;
 }
 
 function tabEvents() {
-  const rows = S.data.events.slice().sort((a, b) => (b.ts?.toMillis?.() || 0) - (a.ts?.toMillis?.() || 0)).slice(0, 60);
+  const rows = fd(S.data.events).slice().sort((a, b) => (b.ts?.toMillis?.() || 0) - (a.ts?.toMillis?.() || 0)).slice(0, 60);
   const lab = { open: 'アプリを開いた', notice_open: 'お知らせを開いた', checkin: 'チェックイン（ホーム画面から起動）' };
   return `<div class="banner">行動ログは、匿名IDで記録されます（個人は特定できません）。直近60件を表示します。</div>
   <div class="scroll-x"><table class="t"><thead><tr><th>日付</th><th>匿名ID</th><th>物件</th><th>行動</th></tr></thead><tbody>
@@ -280,8 +361,13 @@ function bindStaff() {
 }
 
 function render(full = true) {
-  const views = { overview: tabOverview, members: tabMembers, notices: tabNotices, inquiries: tabInquiries, events: tabEvents, admin: tabAdmin, properties: tabProperties, staff: tabStaff };
-  shell(views[S.tab]());
+  const views = { overview: tabOverview, members: tabMembers, notices: tabNotices, inquiries: tabInquiries, reservations: tabReservations, events: tabEvents, admin: tabAdmin, properties: tabProperties, staff: tabStaff };
+  const inner = S.detail ? (S.detail.type === 'member' ? detailMember() : detailInquiry()) : views[S.tab]();
+  shell(inner);
+  const back = $('#back'); if (back) back.addEventListener('click', () => { S.detail = null; render(); });
+  if (S.detail) { if (S.detail.type === 'inq') bindInquiryDetail(); return; }
+  if (S.tab === 'members') bindMembers();
+  if (S.tab === 'inquiries') bindInquiries();
   if (S.tab === 'notices') bindNotices();
   if (S.tab === 'properties') bindProperties();
   if (S.tab === 'staff') bindStaff();

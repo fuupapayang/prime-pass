@@ -185,6 +185,7 @@ exports.sendNotice = onCall(async (req) => {
   for (const t of bad) {
     await db.collection('pushTokens').doc(owner[t]).update({ tokens: FieldValue.arrayRemove(t) }).catch(() => {});
   }
+  await noticeRef.update({ stats: { members: cids.length, pushTargets: tokens.length, success, failure } });
   await audit(auth.uid, 'sendNotice', { role, property, members: cids.length, pushTargets: tokens.length, success, failure });
   return { noticeId: noticeRef.id, members: cids.length, pushTargets: tokens.length, success, failure };
 });
@@ -324,5 +325,22 @@ exports.adminSetStaffDisabled = onCall(async (req) => {
   if (disabled) await admin.auth().revokeRefreshTokens(uid);
   await db.collection('staff').doc(uid).update({ disabled });
   await audit(a.uid, disabled ? 'staff_disable' : 'staff_enable', { uid });
+  return { ok: true };
+});
+
+/* ---------- 9. 問い合わせの対応状況・対応メモ（ADEXと、自物件の担当者） ---------- */
+exports.setInquiryStatus = onCall(async (req) => {
+  const auth = requireAuth(req);
+  const id = clean(req.data && req.data.id, 60);
+  const status = ['new', 'doing', 'done'].includes(req.data && req.data.status) ? req.data.status : null;
+  if (!id || !status) throw new HttpsError('invalid-argument', 'id・status が必要です');
+  const ref = db.collection('inquiries').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', '問い合わせが見つかりません');
+  const prop = snap.data().property;
+  const ok = auth.token.role === 'adex' || (auth.token.role === 'staff' && Array.isArray(auth.token.properties) && auth.token.properties.includes(prop));
+  if (!ok) throw new HttpsError('permission-denied', 'この問い合わせは、操作できません');
+  await ref.update({ status, memo: clean(req.data.memo, 300), handledBy: auth.uid, updatedAt: FieldValue.serverTimestamp() });
+  await audit(auth.uid, 'inquiry_status', { id, status, property: prop });
   return { ok: true };
 });

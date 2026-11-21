@@ -120,6 +120,13 @@ if (cr.result) {
     chk('　停止後は、ログインできない', !nr3.ok);
   }
 }
+console.log('\n■ 問い合わせの対応状況');
+const staff2Tok = await signIn('staff2@primepass.test');
+chk('担当外の担当者（目黒）が、葉山の問い合わせを変更→拒否', !!(await callJ(staff2Tok, 'setInquiryStatus', { id: 'demo_q1', status: 'doing' })).error);
+chk('担当の担当者（葉山）が、自物件の問い合わせを「対応中」にする→成功', !!(await callJ(staff1Tok, 'setInquiryStatus', { id: 'demo_q1', status: 'doing', memo: '自動テスト' })).result);
+chk('ADEXが、「未対応」に戻す→成功', !!(await callJ(adexTok, 'setInquiryStatus', { id: 'demo_q1', status: 'new', memo: '' })).result);
+const qleaTok = await signIn('qlea@primepass.test');
+chk('QLEAが、問い合わせを変更→拒否', !!(await callJ(qleaTok, 'setInquiryStatus', { id: 'demo_q1', status: 'done' })).error);
 globalThis.__cleanup = { PID, staffUid: cr.result && cr.result.uid };
 
 // 後片付け: 自動テストが作ったお知らせ・登録者を、削除する（best effort。gcloud にログイン済みであること）
