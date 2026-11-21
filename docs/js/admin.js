@@ -71,7 +71,7 @@ async function loadAll() {
 
 /* ---------- 画面 ---------- */
 const TABS = () => [
-  ['overview', 'ダッシュボード'], ['members', '登録者'], ['notices', 'お知らせ配信'], ['inquiries', '問い合わせ'], ['events', '行動ログ'], ['perm', '権限の確認'],
+  ['overview', 'ダッシュボード'], ['members', '登録者'], ['notices', 'お知らせ配信'], ['inquiries', '問い合わせ'], ['events', '行動ログ'],
   ...(can.audit() ? [['admin', '担当者・操作記録']] : []),
 ];
 function shell(inner) {
@@ -169,38 +169,6 @@ function tabEvents() {
   ${rows.map((e) => `<tr><td>${fmtDate(e.ts)}</td><td class="mono">${esc(e.anonId)}</td><td>${pn(e.property)}</td><td>${esc(lab[e.type] || e.type)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">まだありません</td></tr>'}</tbody></table></div>`;
 }
 
-/* ---------- 権限の確認（実際にサーバーへ問い合わせて、結果を表示） ---------- */
-const MATRIX = [
-  ['物件の登録・削除', ['◎', '×', '×', '×', '×']], ['担当者の発行・停止', ['◎', '×', '×', '×', '×']],
-  ['通知の配信', ['○', '○', '×', '◎', '×']], ['登録者の個人情報', ['◎', '×', '×', '◎', '×']],
-  ['行動ログ（個人が分かる）', ['◎', '×', '×', '◎', '×']], ['行動ログ（匿名の集計）', ['◎', '◎', '▲', '◎', '×']], ['他の物件の閲覧', ['◎', '○', '▲', '×', '×']],
-];
-const ROLE_COL = { adex: 0, qlea: 1, escon: 2, staff: 3 };
-function tabPerm() {
-  const col = ROLE_COL[S.claims.role];
-  const cls = { '◎': 'ok', '○': 'cond', '▲': 'view', '×': 'no' };
-  return `<div class="card" style="margin-bottom:20px"><h2 class="h2">設計上の権限（一覧）</h2><div class="scroll-x"><table class="t matrix"><thead><tr><th></th><th>ADEX</th><th>QLEA</th><th>ES CON本社</th><th>物件担当者（自物件）</th></tr></thead><tbody>
-  ${MATRIX.map(([l, v]) => `<tr><td>${l}</td>${v.slice(0, 4).map((s, i) => `<td style="${i === col ? 'background:#efe6d2' : ''}"><span class="sym ${cls[s]}">${s}</span></td>`).join('')}</tr>`).join('')}</tbody></table></div>
-  <div class="xs muted" style="margin-top:8px">◎できる ○条件つき ▲閲覧のみ ×できない　／　あなたの列を、色で示しています。</div></div>
-  <div class="card"><h2 class="h2">実際の動作テスト（サーバーに問い合わせます）</h2>
-  <p class="small muted">物件ごとに、データを読み込めるかを、いま実際に試します。「見えない」のが正しい箇所は、×になります。</p>
-  <button class="btn sm" id="runPerm">テストを実行する</button><div id="permRes" style="margin-top:14px"></div></div>`;
-}
-async function runPermTest() {
-  const cols = ['memberships', 'contacts', 'inquiries', 'events', 'notices'];
-  const lab = { memberships: '登録者（匿名）', contacts: '個人情報', inquiries: '問い合わせ', events: '行動ログ', notices: 'お知らせ' };
-  const res = {};
-  for (const p of PROPS) {
-    res[p] = {};
-    for (const c of cols) {
-      try { const s = await getDocs(query(collection(db, c), where('property', '==', p))); res[p][c] = `読める（${s.size}件）`; }
-      catch (e) { res[p][c] = /permission|insufficient/i.test(e.code + e.message) ? '拒否' : 'エラー'; }
-    }
-  }
-  $('#permRes').innerHTML = `<div class="scroll-x"><table class="t"><thead><tr><th>物件</th>${cols.map((c) => `<th>${lab[c]}</th>`).join('')}</tr></thead><tbody>
-  ${PROPS.map((p) => `<tr><td>${pn(p)}</td>${cols.map((c) => { const v = res[p][c]; return `<td>${v === '拒否' ? '<span class="sym no">× 見えない</span>' : v.startsWith('読める') ? `<span class="sym ok">◎ ${esc(v)}</span>` : esc(v)}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
-}
-
 function tabAdmin() {
   const d = S.data;
   return `<h2 class="h2">担当者アカウント</h2><div class="scroll-x"><table class="t"><thead><tr><th>ID</th><th>名前</th><th>役割</th><th>担当物件</th></tr></thead><tbody>
@@ -210,10 +178,9 @@ function tabAdmin() {
 }
 
 function render(full = true) {
-  const views = { overview: tabOverview, members: tabMembers, notices: tabNotices, inquiries: tabInquiries, events: tabEvents, perm: tabPerm, admin: tabAdmin };
+  const views = { overview: tabOverview, members: tabMembers, notices: tabNotices, inquiries: tabInquiries, events: tabEvents, admin: tabAdmin };
   shell(views[S.tab]());
   if (S.tab === 'notices') bindNotices();
-  if (S.tab === 'perm') $('#runPerm').addEventListener('click', async (e) => { e.target.disabled = true; $('#permRes').textContent = '確認しています…'; await runPermTest(); e.target.disabled = false; });
 }
 
 onAuthStateChanged(auth, async (u) => {
