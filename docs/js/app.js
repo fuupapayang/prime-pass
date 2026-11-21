@@ -204,18 +204,18 @@ async function offerClaim() {
   let r = null;
   try { r = (await Promise.race([call('claimInstall')({ dev: devKey() }), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))])).data; } catch { r = null; }
   if (!r || !r.found) { location.hash = ''; S.user = null; viewWelcome(); return; }
-  app.innerHTML = `${topbar(false)}<div class="section" style="padding-top:20px"><p class="eyebrow">Members exclusive</p><h1 class="display">Welcome Back</h1>
-    <h2 class="display-jp" style="margin:16px 0 8px;font-size:24px;line-height:1.7">${esc(r.name || 'お客様')} 様ですか？</h2>
-    <p class="muted small">先ほど、ご登録いただいた方（${esc(r.email || '')}）として、このアプリを開始します。</p>
-    <div class="stack" style="margin-top:22px"><button class="btn" id="claimYes">はい、はじめる</button><button class="btn ghost" id="claimNo">別の方です</button></div><div id="claimMsg"></div></div>`;
-  $('#claimNo').addEventListener('click', () => { viewWelcome(); });
+  app.innerHTML = `${topbar(false)}<div class="section" style="padding-top:20px"><p class="eyebrow">Members exclusive</p><h1 class="display">Welcome</h1>
+    <h2 class="display-jp" style="margin:16px 0 8px;font-size:24px;line-height:1.7">${esc(r.name || 'お客様')} 様<br>PRIME PASSへようこそ。</h2>
+    <p class="muted small">ご登録ありがとうございます（${esc(r.email || '')}）。下のボタンを押すと、アプリのご利用を開始します。</p>
+    <div class="stack" style="margin-top:22px"><button class="btn" id="claimYes">PRIME PASSをはじめる</button><p class="xs center" style="margin:6px 0 0"><a href="#" id="claimNo" style="color:var(--muted);text-decoration:underline">${esc(r.name || 'お客様')} 様ではない方は、こちら</a></p></div><div id="claimMsg"></div></div>`;
+  $('#claimNo').addEventListener('click', (e) => { e.preventDefault(); viewWelcome(); });
   $('#claimYes').addEventListener('click', async () => {
     const b = $('#claimYes'); b.disabled = true; b.textContent = '確認しています…';
     try {
       const c = await call('claimInstallConfirm')({ claim: r.claim });
       await signInWithCustomToken(auth, c.data.customToken);
       location.reload();
-    } catch (e) { b.disabled = false; b.textContent = 'はい、はじめる'; $('#claimMsg').innerHTML = `<div class="banner err" style="margin-top:14px">開始できませんでした：${esc(e.message)}</div>`; }
+    } catch (e) { b.disabled = false; b.textContent = 'PRIME PASSをはじめる'; $('#claimMsg').innerHTML = `<div class="banner err" style="margin-top:14px">開始できませんでした：${esc(e.message)}</div>`; }
   });
 }
 
@@ -680,6 +680,26 @@ document.addEventListener('click', (e) => {
   const g = e.target.closest('[data-go]'); if (g) { location.hash = g.dataset.go; }
 });
 window.addEventListener('hashchange', route);
+
+// 背景画像の読み込みを確実にする（iPhoneで、画像が途中で止まる・出ないことがあるため）：読み込めるまで確認し、止まったときは、やり直す
+function hydrateBg(root) {
+  (root || document).querySelectorAll('[style*="background-image"]').forEach((el) => {
+    if (el.dataset.bgOk) return;
+    const m = (el.style.backgroundImage || '').match(/url\(["']?(.*?)["']?\)/); if (!m) return;
+    const url = m[1]; el.dataset.bgOk = '1';
+    const attempt = (n) => {
+      const u = n === 0 ? url : url + (url.includes('?') ? '&' : '?') + '_r=' + n;
+      const img = new Image(); let done = false;
+      const to = setTimeout(() => { if (!done) { done = true; if (n < 3) attempt(n + 1); } }, 8000);
+      img.onload = () => { if (done) return; done = true; clearTimeout(to); el.style.backgroundImage = `url('${u}')`; };
+      img.onerror = () => { if (done) return; done = true; clearTimeout(to); if (n < 3) setTimeout(() => attempt(n + 1), 600 * (n + 1)); };
+      img.src = u;
+    };
+    attempt(0);
+  });
+}
+let hydrateTimer = null;
+new MutationObserver(() => { clearTimeout(hydrateTimer); hydrateTimer = setTimeout(() => hydrateBg(app), 60); }).observe(app, { childList: true, subtree: true });
 
 async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./firebase-messaging-sw.js').catch(() => {});
