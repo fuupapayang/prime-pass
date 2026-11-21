@@ -157,8 +157,53 @@ exports.mintHandoff = onCall(async (req) => {
   const recent = await db.collection('tokens').where('cid', '==', auth.uid).where('used', '==', false).get();
   if (recent.size > 30) throw new HttpsError('resource-exhausted', 'しばらくしてから、もう一度お試しください');
   const token = crypto.randomBytes(24).toString('base64url');
-  await db.collection('tokens').doc(sha256(token)).set({ cid: auth.uid, kind, exp: Timestamp.fromMillis(Date.now() + ttl * 1000), used: false });
+  const hint = deviceHint(req);
+  await db.collection('tokens').doc(sha256(token)).set({ cid: auth.uid, kind, exp: Timestamp.fromMillis(Date.now() + ttl * 1000), used: false, ...(kind === 'install' ? { ipHash: hint.ipHash, dev: hint.dev, createdAt: FieldValue.serverTimestamp() } : {}) });
   return { token, expiresInSec: ttl };
+});
+
+// 端末の目印（接続元IP＋iPhoneの種類とiOSの版）。ホーム画面アプリは、Safariとログインを共有しないため、同じ回線・同じ端末から、短時間に、1件だけ候補があるときに限り、本人に確認してから、引き継ぐ
+function deviceHint(req) {
+  const h = (req.rawRequest && req.rawRequest.headers) || {};
+  const ip = String(h['x-forwarded-for'] || (req.rawRequest && req.rawRequest.ip) || '').split(',')[0].trim();
+  const ua = String(h['user-agent'] || '');
+  const m = ua.match(/\((iPhone|iPad|iPod)[^)]*?OS (\d+)[_.](\d+)/);
+  const dev = m ? `${m[1]}-${m[2]}.${m[3]}` : '';
+  return { ipHash: ip ? sha256('ip:' + ip) : '', dev };
+}
+exports.claimInstall = onCall(async (req) => {
+  const hint = deviceHint(req);
+  if (!hint.ipHash || !hint.dev) return { found: false };
+  const since = Timestamp.fromMillis(Date.now() - 60 * 60 * 1000);
+  const q = await db.collection('tokens').where('ipHash', '==', hint.ipHash).where('dev', '==', hint.dev).where('used', '==', false).get();
+  const live = q.docs.filter((d) => d.data().kind === 'install' && d.data().exp.toMillis() > Date.now() && d.data().createdAt && d.data().createdAt.toMillis() >= since.toMillis());
+  const cids = [...new Set(live.map((d) => d.data().cid))];
+  if (cids.length !== 1) return { found: false, ambiguous: cids.length > 1 };
+  const cid = cids[0];
+  const claim = crypto.randomBytes(24).toString('base64url');
+  const batch = db.batch();
+  live.forEach((d) => batch.update(d.ref, { claimHash: sha256(claim), claimAt: FieldValue.serverTimestamp() }));
+  await batch.commit();
+  const c = await db.collection('contacts').where('cid', '==', cid).limit(1).get();
+  const d0 = c.empty ? {} : c.docs[0].data();
+  const sur = String(d0.name || '').split(/\s+/)[0];
+  const [a, b] = String(d0.email || '').split('@');
+  return { found: true, claim, name: sur, email: b ? `${a.slice(0, 2)}****@${b}` : '' };
+});
+exports.claimInstallConfirm = onCall(async (req) => {
+  const claim = clean(req.data && req.data.claim, 80);
+  if (!claim) throw new HttpsError('invalid-argument', 'claim required');
+  const q = await db.collection('tokens').where('claimHash', '==', sha256(claim)).get();
+  const ref = await db.runTransaction(async (tx) => {
+    const docs = q.docs.filter((d) => d.data().kind === 'install');
+    if (!docs.length) throw new HttpsError('not-found', '確認できませんでした');
+    const snaps = await Promise.all(docs.map((d) => tx.get(d.ref)));
+    const ok = snaps.find((x) => x.exists && !x.data().used && x.data().exp.toMillis() > Date.now() && x.data().claimAt && x.data().claimAt.toMillis() > Date.now() - 15 * 60 * 1000);
+    if (!ok) throw new HttpsError('failed-precondition', '有効期限が切れています');
+    snaps.forEach((x) => { if (x.exists && !x.data().used) tx.update(x.ref, { used: true, usedAt: FieldValue.serverTimestamp() }); });
+    return ok.data().cid;
+  });
+  return { customToken: await admin.auth().createCustomToken(ref, { role: 'member' }) };
 });
 
 // お客様の通知の希望（メールでの案内）。本人の登録すべてに反映する

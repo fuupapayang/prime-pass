@@ -197,6 +197,27 @@ function drawQr() {
   document.head.appendChild(sc);
 }
 
+// ホーム画面アプリの初回起動：同じ端末のSafariで登録した方が、ひとりだけ見つかったときは、確認のうえ、そのままログインする
+async function offerClaim() {
+  app.innerHTML = '<div class="section center" style="padding-top:30vh"><p class="eyebrow">PRIME PASS</p><div class="pp-spin" aria-hidden="true"></div><p class="h2">ご登録を確認しています…</p><p class="xs muted" style="margin-top:10px">数秒かかります。画面を閉じずに、そのままお待ちください。</p></div>';
+  let r = null;
+  try { r = (await Promise.race([call('claimInstall')({}), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))])).data; } catch { r = null; }
+  if (!r || !r.found) { location.hash = ''; S.user = null; viewWelcome(); return; }
+  app.innerHTML = `${topbar(false)}<div class="section" style="padding-top:20px"><p class="eyebrow">Members exclusive</p><h1 class="display">Welcome Back</h1>
+    <h2 class="display-jp" style="margin:16px 0 8px;font-size:24px;line-height:1.7">${esc(r.name || 'お客様')} 様ですか？</h2>
+    <p class="muted small">先ほど、ご登録いただいた方（${esc(r.email || '')}）として、このアプリを開始します。</p>
+    <div class="stack" style="margin-top:22px"><button class="btn" id="claimYes">はい、はじめる</button><button class="btn ghost" id="claimNo">別の方です</button></div><div id="claimMsg"></div></div>`;
+  $('#claimNo').addEventListener('click', () => { viewWelcome(); });
+  $('#claimYes').addEventListener('click', async () => {
+    const b = $('#claimYes'); b.disabled = true; b.textContent = '確認しています…';
+    try {
+      const c = await call('claimInstallConfirm')({ claim: r.claim });
+      await signInWithCustomToken(auth, c.data.customToken);
+      location.reload();
+    } catch (e) { b.disabled = false; b.textContent = 'はい、はじめる'; $('#claimMsg').innerHTML = `<div class="banner err" style="margin-top:14px">開始できませんでした：${esc(e.message)}</div>`; }
+  });
+}
+
 // iPhone：ホーム画面に追加したアプリは、Safariとログインを共有しない。追加用の設定ファイルの開始URLに、使い捨ての番号を入れておき、初回の起動で、自動でログインする
 // iPhoneは、ホーム画面に追加するとき、いま開いているURLを保存する。使い捨ての番号を、URLに付けておく（?i=）
 function applyInstallUrl() { if (S.installTok) history.replaceState(null, '', location.pathname + '?i=' + encodeURIComponent(S.installTok) + location.hash); }
@@ -680,6 +701,7 @@ async function boot() {
     }
   }
   S.user = auth.currentUser || u0;
+  if (!S.user && isStandalone() && isIOS) { await offerClaim(); return; }
   if (S.user) {
     try {
       await loadData();
