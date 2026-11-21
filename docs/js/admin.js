@@ -1,18 +1,21 @@
 // PRIME PASS 管理画面（6つの役割：ADEX / QLEA / ES CON本社 / 物件担当者1〜3）
 import {
   auth, db, authReady, call, signInWithEmailAndPassword, signOut, onAuthStateChanged,
-  collection, query, where, getDocs, $, $$, esc, fmtDate,
+  collection, query, where, getDocs, doc, getDoc, $, $$, esc, fmtDate,
 } from './fb.js';
-import { PROPERTY_NAMES, PROPERTY_IDS, ENV_LABEL } from './config.js';
+import { ENV_LABEL, assetKey } from './config.js';
 
 const root = $('#root');
-const PROPS = PROPERTY_IDS;
+let PROPS = [];
+let PNAMES = {};
+const REGIONS = ['首都圏', '関西', '西日本', '九州・沖縄', '北海道', '中部', '海外'];
 const ROLE_LABEL = { adex: 'ADEX', qlea: 'QLEA', escon: 'ES CON本社', staff: '物件担当者' };
-const S = { claims: null, user: null, tab: 'overview', data: {} };
+const S = { claims: null, user: null, tab: 'overview', data: {}, propDocs: [], assets: {} };
+const imgOf = (id) => S.assets[assetKey(id)] || '';
 
 const roleName = () => {
   const c = S.claims; if (!c) return '';
-  if (c.role === 'staff') return `物件担当者（${(c.properties || []).map((p) => PROPERTY_NAMES[p] || p).join('・')}）`;
+  if (c.role === 'staff') return `物件担当者（${(c.properties || []).map((p) => PNAMES[p] || p).join('・')}）`;
   return ROLE_LABEL[c.role] || c.role;
 };
 const scope = () => { const c = S.claims; return c.role === 'staff' ? c.properties || [] : PROPS; };
@@ -21,6 +24,7 @@ const can = {
   inquiries: () => ['adex', 'staff'].includes(S.claims.role),
   send: () => ['adex', 'staff'].includes(S.claims.role),
   audit: () => S.claims.role === 'adex',
+  manage: () => S.claims.role === 'adex',
 };
 
 /* ---------- ログイン ---------- */
@@ -56,6 +60,11 @@ async function fetchScoped(col) {
   return out;
 }
 async function loadAll() {
+  const ps = await getDocs(collection(db, 'properties'));
+  S.propDocs = ps.docs.map((x) => ({ id: x.id, ...x.data() })).sort((a, b) => (a.order || 0) - (b.order || 0));
+  PROPS = S.propDocs.filter((x) => x.status !== 'archived').map((x) => x.id);
+  PNAMES = Object.fromEntries(S.propDocs.map((x) => [x.id, x.name]));
+  try { const as = await getDoc(doc(db, 'config', 'assets')); S.assets = as.exists() ? as.data().urls || {} : {}; } catch { S.assets = {}; }
   const d = S.data = {};
   d.memberships = await fetchScoped('memberships');
   d.notices = await fetchScoped('notices');
@@ -72,7 +81,7 @@ async function loadAll() {
 /* ---------- 画面 ---------- */
 const TABS = () => [
   ['overview', 'ダッシュボード'], ['members', '登録者'], ['notices', 'お知らせ配信'], ['inquiries', '問い合わせ'], ['events', '行動ログ'],
-  ...(can.audit() ? [['admin', '担当者・操作記録']] : []),
+  ...(can.manage() ? [['properties', '物件'], ['staff', '担当者'], ['admin', '操作記録']] : []),
 ];
 function shell(inner) {
   root.innerHTML = `<div class="admin">
@@ -86,7 +95,7 @@ function shell(inner) {
   $('#lo').addEventListener('click', () => signOut(auth));
   $$('.navtabs button').forEach((b) => b.addEventListener('click', () => { S.tab = b.dataset.t; render(); }));
 }
-const pn = (p) => esc(PROPERTY_NAMES[p] || p);
+const pn = (p) => esc(PNAMES[p] || p);
 const ago = (ts, days) => (ts?.toMillis?.() || 0) > Date.now() - days * 86400000;
 
 function tabOverview() {
@@ -102,6 +111,8 @@ function tabOverview() {
     ${can.inquiries() ? `<div class="stat"><div class="l">未対応の問い合わせ</div><div class="n">${d.inquiries.filter((i) => i.status === 'new').length}</div></div>` : ''}
     <div class="stat"><div class="l">配信したお知らせ</div><div class="n">${d.notices.length}</div></div>
   </div>
+  <h2 class="h2" style="margin-top:26px">物件ごとの登録者</h2>
+  <div class="grid4" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">${S.propDocs.filter((p) => p.status !== 'archived' && scope().includes(p.id)).map((p) => `<div class="stat" style="padding:0"><div style="height:90px;background:#cfc8b8 center/cover no-repeat;${imgOf(p.id) ? `background-image:url('${esc(imgOf(p.id))}')` : ''}"></div><div style="padding:10px 12px"><div class="xs">${esc(p.name)}</div><div class="n" style="font-size:28px">${d.memberships.filter((m) => m.property === p.id).length}</div></div></div>`).join('')}</div>
   <h2 class="h2" style="margin-top:26px">あなたの権限（${esc(roleName())}）</h2>
   <div class="card small">${roleSummary()}</div>`;
 }
@@ -111,7 +122,7 @@ function roleSummary() {
     adex: '全物件の管理。担当者の発行・停止。登録者の個人情報も、すべて見られます。通知は、依頼があったときの代行です。',
     qlea: '保守を行う制作側です。匿名ID・匿名の集計だけが見えます。個人情報は見えません。通知は、ADEXの依頼による期間つきの代行権限があるときだけです。',
     escon: '閲覧のみ（集計まで）です。通知の配信・編集はできません。個人情報は、標準では見えません。',
-    staff: `自分の物件（${scope().map((p) => PROPERTY_NAMES[p]).join('・')}）だけを運用します。通知の配信、問い合わせ対応、登録者の個人情報の閲覧ができます。他の物件は、見えません。`,
+    staff: `自分の物件（${scope().map((p) => PNAMES[p]).join('・')}）だけを運用します。通知の配信、問い合わせ対応、登録者の個人情報の閲覧ができます。他の物件は、見えません。`,
   };
   return m[r];
 }
@@ -171,16 +182,109 @@ function tabEvents() {
 
 function tabAdmin() {
   const d = S.data;
-  return `<h2 class="h2">担当者アカウント</h2><div class="scroll-x"><table class="t"><thead><tr><th>ID</th><th>名前</th><th>役割</th><th>担当物件</th></tr></thead><tbody>
-  ${d.staff.map((s) => `<tr><td>${esc(s.email)}</td><td>${esc(s.displayName)}</td><td>${esc(ROLE_LABEL[s.role] || s.role)}</td><td>${(s.properties || []).map(pn).join('・') || '全物件'}</td></tr>`).join('')}</tbody></table></div>
-  <h2 class="h2" style="margin-top:26px">操作記録（監査ログ）</h2><div class="scroll-x"><table class="t"><thead><tr><th>日時</th><th>操作</th><th>実行者</th><th>内容</th></tr></thead><tbody>
-  ${d.audit.slice(0, 40).map((a) => `<tr><td>${fmtDate(a.at)}</td><td>${esc(a.action)}</td><td class="mono">${esc(String(a.actor).slice(0, 10))}</td><td class="mono">${esc(JSON.stringify(a.detail || {}))}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">まだありません</td></tr>'}</tbody></table></div>`;
+  return `<h2 class="h2">操作記録（監査ログ）</h2><div class="scroll-x"><table class="t"><thead><tr><th>日時</th><th>操作</th><th>実行者</th><th>内容</th></tr></thead><tbody>
+  ${d.audit.slice(0, 60).map((a) => `<tr><td>${fmtDate(a.at)}</td><td>${esc(a.action)}</td><td class="mono">${esc(String(a.actor).slice(0, 10))}</td><td class="mono">${esc(JSON.stringify(a.detail || {}))}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">まだありません</td></tr>'}</tbody></table></div>`;
+}
+
+/* ---------- ADEX専用：物件の登録・編集・掲載停止 ---------- */
+function thumb(id) { return `<div style="width:64px;height:64px;background:#cfc8b8 center/cover no-repeat;${imgOf(id) ? `background-image:url('${esc(imgOf(id))}')` : ''}"></div>`; }
+function tabProperties() {
+  const counts = {}; S.data.memberships.forEach((m) => { counts[m.property] = (counts[m.property] || 0) + 1; });
+  return `<div class="card" style="margin-bottom:22px"><h2 class="h2" id="pfTitle">物件を登録する</h2>
+    <div class="grid4" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+      <div class="field"><label>物件ID（半角英数・ハイフン。登録後は変更できません）</label><input class="input" id="pfId" placeholder="例：hakone-101" maxlength="31"></div>
+      <div class="field"><label>物件名</label><input class="input" id="pfName" maxlength="60" placeholder="例：レ・ジェイド箱根"></div>
+      <div class="field"><label>地域</label><select class="input" id="pfRegion">${REGIONS.map((r) => `<option>${r}</option>`).join('')}</select></div>
+      <div class="field"><label>エリア</label><input class="input" id="pfArea" maxlength="60" placeholder="例：神奈川県 箱根町"></div>
+      <div class="field"><label>種別</label><select class="input" id="pfKind"><option>新築</option><option>中古</option></select></div>
+      <div class="field"><label>公式サイトURL（https://）</label><input class="input" id="pfUrl" maxlength="300" placeholder="https://"></div>
+      <div class="field"><label>アプリ内の表示名（任意）</label><input class="input" id="pfApp" maxlength="60"></div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn sm" id="pfSave">登録する</button><button class="btn sm ghost hidden" id="pfCancel">編集をやめる</button></div>
+    <div id="pfRes" style="margin-top:12px"></div></div>
+  <div class="scroll-x"><table class="t"><thead><tr><th></th><th>物件名</th><th>地域・エリア</th><th>登録者</th><th>状態</th><th>操作</th></tr></thead><tbody>
+  ${S.propDocs.map((p) => `<tr><td>${thumb(p.id)}</td><td><b>${esc(p.name)}</b><div class="mono muted">${esc(p.id)}</div></td><td>${esc(p.region || '')}<div class="xs muted">${esc(p.area || '')}</div></td><td>${counts[p.id] || 0}</td><td>${p.status === 'archived' ? '<span class="tag red">掲載停止</span>' : '<span class="tag">掲載中</span>'}</td>
+  <td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost" data-edit="${esc(p.id)}">編集</button>${p.status === 'archived' ? `<button class="btn sm ghost" data-restore="${esc(p.id)}">掲載を再開</button>` : `<button class="btn sm danger" data-archive="${esc(p.id)}">掲載を停止</button>`}</div></td></tr>`).join('')}</tbody></table></div>
+  <p class="xs muted" style="margin-top:8px">「掲載を停止」しても、登録者・問い合わせ・ログなどのデータは、削除されません（保管期間のルールに従います）。</p>`;
+}
+function bindProperties() {
+  const f = (id) => $('#' + id);
+  const reset = () => { f('pfTitle').textContent = '物件を登録する'; f('pfId').disabled = false; ['pfId', 'pfName', 'pfArea', 'pfUrl', 'pfApp'].forEach((i) => { f(i).value = ''; }); f('pfSave').textContent = '登録する'; f('pfCancel').classList.add('hidden'); };
+  f('pfCancel').addEventListener('click', reset);
+  $$('[data-edit]').forEach((b) => b.addEventListener('click', () => {
+    const p = S.propDocs.find((x) => x.id === b.dataset.edit);
+    f('pfTitle').textContent = `物件を編集する（${p.name}）`; f('pfId').value = p.id; f('pfId').disabled = true; f('pfName').value = p.name || '';
+    f('pfRegion').value = p.region || REGIONS[0]; f('pfArea').value = p.area || ''; f('pfKind').value = p.kind || '新築'; f('pfUrl').value = p.url || ''; f('pfApp').value = p.appName || '';
+    f('pfSave').textContent = '保存する'; f('pfCancel').classList.remove('hidden'); window.scrollTo(0, 0);
+  }));
+  f('pfSave').addEventListener('click', async (e) => {
+    e.target.disabled = true; f('pfRes').innerHTML = '';
+    try {
+      const r = await call('adminSaveProperty')({ id: f('pfId').value.trim(), name: f('pfName').value, region: f('pfRegion').value, area: f('pfArea').value, kind: f('pfKind').value, url: f('pfUrl').value, appName: f('pfApp').value });
+      await loadAll(); render(); $('#pfRes').innerHTML = `<div class="banner ok">${r.data.created ? '物件を登録しました' : '物件を更新しました'}</div>`;
+    } catch (err) { f('pfRes').innerHTML = `<div class="banner err">${esc(err.message)}</div>`; e.target.disabled = false; }
+  });
+  const setStatus = (attr, status, msg) => $$(`[${attr}]`).forEach((b) => b.addEventListener('click', async () => {
+    const p = S.propDocs.find((x) => x.id === b.getAttribute(attr));
+    if (!confirm(msg(p.name))) return;
+    try { await call('adminSetPropertyStatus')({ id: p.id, status }); await loadAll(); render(); } catch (err) { alert('できませんでした：' + err.message); }
+  }));
+  setStatus('data-archive', 'archived', (n) => `「${n}」の掲載を停止します。\n登録者・問い合わせ・ログなどのデータは、削除されません。\nよろしいですか？`);
+  setStatus('data-restore', 'active', (n) => `「${n}」の掲載を再開します。よろしいですか？`);
+}
+
+/* ---------- ADEX専用：物件担当者アカウントの発行・変更・停止 ---------- */
+const propChecks = (name, sel = []) => `<div style="display:flex;flex-wrap:wrap;gap:6px 14px">${PROPS.map((p) => `<label style="font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" name="${name}" value="${esc(p)}" ${sel.includes(p) ? 'checked' : ''}>${esc(PNAMES[p] || p)}</label>`).join('')}</div>`;
+function tabStaff() {
+  const rows = (S.data.staff || []).slice().sort((a, b) => String(a.email).localeCompare(String(b.email)));
+  return `<div class="card" style="margin-bottom:22px"><h2 class="h2">物件担当者のアカウントを発行する</h2>
+    <div class="grid4" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
+      <div class="field"><label>ID（メールアドレス）</label><input class="input" id="sfEmail" type="email" placeholder="例：tantou@example.com"></div>
+      <div class="field"><label>お名前</label><input class="input" id="sfName" maxlength="60"></div>
+    </div>
+    <div class="field"><label>担当する物件（複数選べます）</label>${propChecks('sfProp')}</div>
+    <button class="btn sm" id="sfCreate">発行する</button><div id="sfRes" style="margin-top:12px"></div></div>
+  <div class="scroll-x"><table class="t"><thead><tr><th>ID</th><th>お名前</th><th>役割</th><th>担当物件</th><th>状態</th><th>操作</th></tr></thead><tbody>
+  ${rows.map((s) => `<tr><td>${esc(s.email)}</td><td>${esc(s.displayName)}</td><td>${esc(ROLE_LABEL[s.role] || s.role)}</td><td>${(s.properties || []).map((p) => esc(PNAMES[p] || p)).join('・') || '全物件'}</td><td>${s.disabled ? '<span class="tag red">停止中</span>' : '<span class="tag">有効</span>'}</td>
+  <td>${s.role === 'staff' ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost" data-sedit="${esc(s.id)}">担当物件を変更</button>${s.disabled ? `<button class="btn sm ghost" data-son="${esc(s.id)}">再開</button>` : `<button class="btn sm danger" data-soff="${esc(s.id)}">停止</button>`}</div>` : '<span class="xs muted">—</span>'}</td></tr>`).join('')}</tbody></table></div>
+  <p class="xs muted" style="margin-top:8px">担当者のアカウントは、ADEXだけが発行・停止できます（担当者自身では作れません）。異動・退職のときは、すぐに「停止」してください。権限を変更すると、その担当者は、いったんログアウトされます。</p>`;
+}
+function bindStaff() {
+  const picked = (name, root = document) => [...root.querySelectorAll(`input[name="${name}"]:checked`)].map((x) => x.value);
+  $('#sfCreate').addEventListener('click', async (e) => {
+    e.target.disabled = true; $('#sfRes').innerHTML = '';
+    try {
+      const r = await call('adminCreateStaff')({ email: $('#sfEmail').value, name: $('#sfName').value, properties: picked('sfProp') });
+      await loadAll(); render();
+      $('#sfRes').innerHTML = `<div class="banner ok"><b>発行しました。</b>この画面を閉じると、パスワードは、二度と表示されません。<br>ID：<span class="mono">${esc(r.data.email)}</span>　パスワード：<span class="mono">${esc(r.data.password)}</span><br><span class="xs">安全な方法（直接・パスワード管理ツールなど）で、本人にお伝えください。</span></div>`;
+    } catch (err) { $('#sfRes').innerHTML = `<div class="banner err">${esc(err.message)}</div>`; e.target.disabled = false; }
+  });
+  $$('[data-sedit]').forEach((b) => b.addEventListener('click', () => {
+    const st = S.data.staff.find((x) => x.id === b.dataset.sedit);
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,28,22,.5);display:grid;place-items:center;z-index:50;padding:20px';
+    ov.innerHTML = `<div class="card" style="max-width:460px;width:100%"><h2 class="h2">担当物件を変更（${esc(st.displayName)}）</h2>${propChecks('seProp', st.properties || [])}<div style="display:flex;gap:10px;margin-top:16px"><button class="btn sm" id="seOk">保存する</button><button class="btn sm ghost" id="seNo">キャンセル</button></div><div id="seRes" style="margin-top:10px"></div></div>`;
+    document.body.appendChild(ov);
+    $('#seNo', ov).addEventListener('click', () => ov.remove());
+    $('#seOk', ov).addEventListener('click', async () => {
+      try { await call('adminUpdateStaff')({ uid: st.id, properties: picked('seProp', ov) }); ov.remove(); await loadAll(); render(); } catch (err) { $('#seRes', ov).innerHTML = `<div class="banner err">${esc(err.message)}</div>`; }
+    });
+  }));
+  const toggle = (attr, disabled, msg) => $$(`[${attr}]`).forEach((b) => b.addEventListener('click', async () => {
+    const st = S.data.staff.find((x) => x.id === b.getAttribute(attr));
+    if (!confirm(msg(st.displayName))) return;
+    try { await call('adminSetStaffDisabled')({ uid: st.id, disabled }); await loadAll(); render(); } catch (err) { alert('できませんでした：' + err.message); }
+  }));
+  toggle('data-soff', true, (n) => `「${n}」のアカウントを停止します。すぐにログインできなくなります。よろしいですか？`);
+  toggle('data-son', false, (n) => `「${n}」のアカウントを再開します。よろしいですか？`);
 }
 
 function render(full = true) {
-  const views = { overview: tabOverview, members: tabMembers, notices: tabNotices, inquiries: tabInquiries, events: tabEvents, admin: tabAdmin };
+  const views = { overview: tabOverview, members: tabMembers, notices: tabNotices, inquiries: tabInquiries, events: tabEvents, admin: tabAdmin, properties: tabProperties, staff: tabStaff };
   shell(views[S.tab]());
   if (S.tab === 'notices') bindNotices();
+  if (S.tab === 'properties') bindProperties();
+  if (S.tab === 'staff') bindStaff();
 }
 
 onAuthStateChanged(auth, async (u) => {

@@ -9,6 +9,7 @@ export const FIREBASE_CONFIG = {
 };
 export const REGION = 'asia-northeast1';
 export const INTAKE_URL = `https://${REGION}-${FIREBASE_CONFIG.projectId}.cloudfunctions.net/intake`;
+export const LIST_URL = `https://${REGION}-${FIREBASE_CONFIG.projectId}.cloudfunctions.net/listProperties`;
 export const APP_NAME = 'PRIME PASS';
 export const ENV_LABEL = 'テスト環境（架空データのみ）';
 

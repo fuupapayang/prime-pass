@@ -28,7 +28,15 @@ const ALLOWED_ORIGINS = [
   'http://127.0.0.1:8080',
   'http://localhost:5000',
 ];
-const PROPERTIES = ['hayama24', 'meguro62', 'doyama227', 'naha-asato83', 'fvillage508', 'ost-garden', 'alia-hawaii'];
+// 物件の一覧は、Firestore の properties（掲載停止した物件は除く）。20秒だけ覚えておく
+let propCache = { at: 0, ids: [] };
+async function activeProps() {
+  if (Date.now() - propCache.at < 20000) return propCache.ids;
+  const snap = await db.collection('properties').get();
+  propCache = { at: Date.now(), ids: snap.docs.filter((d) => d.data().status !== 'archived').map((d) => d.id) };
+  return propCache.ids;
+}
+const invalidateProps = () => { propCache = { at: 0, ids: [] }; };
 const TOKEN_TTL_SEC = 15 * 60;
 
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -52,7 +60,7 @@ exports.intake = onRequest({ cors: ALLOWED_ORIGINS }, async (req, res) => {
   const phone = clean(b.phone, 30);
   const property = clean(b.property, 20);
   const formType = clean(b.formType || 'entry', 20);
-  if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !phone || !PROPERTIES.includes(property) || b.consent !== true) {
+  if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !phone || !(await activeProps()).includes(property) || b.consent !== true) {
     return res.status(400).json({ error: 'invalid_input' });
   }
 
@@ -132,7 +140,7 @@ exports.sendNotice = onCall(async (req) => {
   const property = clean(req.data && req.data.property, 20);
   const title = clean(req.data && req.data.title, 80);
   const body = clean(req.data && req.data.body, 300);
-  if (!PROPERTIES.includes(property) || !title || !body) throw new HttpsError('invalid-argument', '物件・タイトル・本文が必要です');
+  if (!(await activeProps()).includes(property) || !title || !body) throw new HttpsError('invalid-argument', '物件・タイトル・本文が必要です');
 
   // 権限: ADEXは全物件（依頼時の代行）。物件担当者は自物件のみ。QLEAは、期間つきの代行権限がある場合のみ。ES CON本社は不可
   let allowed = false;
@@ -185,7 +193,8 @@ exports.sendNotice = onCall(async (req) => {
 exports.submitInquiry = onCall(async (req) => {
   const auth = requireAuth(req);
   if (auth.token.role !== 'member') throw new HttpsError('permission-denied', 'お客様のみ');
-  const props = (Array.isArray(req.data && req.data.properties) ? req.data.properties : []).filter((p) => PROPERTIES.includes(p));
+  const ap = await activeProps();
+  const props = (Array.isArray(req.data && req.data.properties) ? req.data.properties : []).filter((p) => ap.includes(p));
   if (!props.length) throw new HttpsError('invalid-argument', '物件を選んでください');
   const kind = req.data.kind === 'visit' ? 'visit' : 'inquiry';
   const base = {
@@ -218,5 +227,102 @@ exports.logEvent = onCall(async (req) => {
     batch.update(d.ref, { lastSeenAt: FieldValue.serverTimestamp() });
   });
   await batch.commit();
+  return { ok: true };
+});
+
+/* ---------- 7. 物件の一覧（登録フォーム用。ログイン不要・公開してよい情報だけ） ---------- */
+exports.listProperties = onRequest({ cors: ALLOWED_ORIGINS }, async (req, res) => {
+  const snap = await db.collection('properties').get();
+  const list = snap.docs.filter((d) => d.data().status !== 'archived')
+    .map((d) => ({ id: d.id, name: d.data().name, order: d.data().order || 0 }))
+    .sort((a, b) => a.order - b.order);
+  res.set('Cache-Control', 'public, max-age=60').json({ properties: list });
+});
+
+/* ---------- 8. ADEX専用：物件と担当者の管理 ---------- */
+function requireRole(req, roles) {
+  const auth = requireAuth(req);
+  if (!roles.includes(auth.token.role)) throw new HttpsError('permission-denied', 'この操作は、ADEXのみ行えます');
+  return auth;
+}
+const ID_RE = /^[a-z0-9][a-z0-9-]{1,30}$/;
+
+exports.adminSaveProperty = onCall(async (req) => {
+  const a = requireRole(req, ['adex']);
+  const d = req.data || {};
+  const id = clean(d.id, 32);
+  if (!ID_RE.test(id)) throw new HttpsError('invalid-argument', 'IDは、半角の英小文字・数字・ハイフンで、2〜31文字にしてください');
+  const name = clean(d.name, 60);
+  if (!name) throw new HttpsError('invalid-argument', '物件名が必要です');
+  const ref = db.collection('properties').doc(id);
+  const exists = (await ref.get()).exists;
+  const data = {
+    name, region: clean(d.region, 20), area: clean(d.area, 60), kind: ['新築', '中古'].includes(d.kind) ? d.kind : '新築',
+    url: /^https:\/\//.test(clean(d.url, 300)) ? clean(d.url, 300) : '', appName: clean(d.appName, 60), status: 'active', updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (!exists) data.order = Date.now();
+  await ref.set(data, { merge: true });
+  invalidateProps();
+  await audit(a.uid, exists ? 'property_update' : 'property_create', { id, name });
+  return { ok: true, created: !exists };
+});
+
+exports.adminSetPropertyStatus = onCall(async (req) => {
+  const a = requireRole(req, ['adex']);
+  const id = clean(req.data && req.data.id, 32);
+  const status = req.data && req.data.status === 'archived' ? 'archived' : 'active';
+  const ref = db.collection('properties').doc(id);
+  if (!(await ref.get()).exists) throw new HttpsError('not-found', '物件が見つかりません');
+  // 掲載を停止しても、登録者・ログなどのデータは削除しない（保管期間のルールに従う）
+  await ref.update({ status, updatedAt: FieldValue.serverTimestamp() });
+  invalidateProps();
+  await audit(a.uid, status === 'archived' ? 'property_archive' : 'property_restore', { id });
+  return { ok: true };
+});
+
+exports.adminCreateStaff = onCall(async (req) => {
+  const a = requireRole(req, ['adex']);
+  const email = clean(req.data && req.data.email, 120).toLowerCase();
+  const name = clean(req.data && req.data.name, 60);
+  const ap = await activeProps();
+  const props = (Array.isArray(req.data && req.data.properties) ? req.data.properties : []).filter((p) => ap.includes(p));
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !name || !props.length) throw new HttpsError('invalid-argument', 'メールアドレス・お名前・担当物件が必要です');
+  const password = 'pp-' + crypto.randomBytes(9).toString('base64url');
+  let user;
+  try { user = await admin.auth().createUser({ email, password, displayName: name, emailVerified: true }); }
+  catch (e) { if (e.code === 'auth/email-already-exists') throw new HttpsError('already-exists', 'このメールアドレスは、すでに使われています'); throw e; }
+  await admin.auth().setCustomUserClaims(user.uid, { role: 'staff', properties: props });
+  await db.collection('staff').doc(user.uid).set({ email, displayName: name, role: 'staff', properties: props, disabled: false, createdAt: FieldValue.serverTimestamp() });
+  await audit(a.uid, 'staff_create', { email, properties: props });
+  return { uid: user.uid, email, password }; // パスワードは、この1回だけ表示する
+});
+
+async function staffOf(uid) {
+  const s = await db.collection('staff').doc(String(uid)).get();
+  if (!s.exists || s.data().role !== 'staff') throw new HttpsError('failed-precondition', '物件担当者のアカウントではありません');
+  return s;
+}
+exports.adminUpdateStaff = onCall(async (req) => {
+  const a = requireRole(req, ['adex']);
+  const uid = clean(req.data && req.data.uid, 60);
+  await staffOf(uid);
+  const ap = await activeProps();
+  const props = (Array.isArray(req.data && req.data.properties) ? req.data.properties : []).filter((p) => ap.includes(p));
+  if (!props.length) throw new HttpsError('invalid-argument', '担当物件が必要です');
+  await admin.auth().setCustomUserClaims(uid, { role: 'staff', properties: props });
+  await admin.auth().revokeRefreshTokens(uid); // 権限の変更を、すぐに反映するため、いったんログアウトさせる
+  await db.collection('staff').doc(uid).update({ properties: props });
+  await audit(a.uid, 'staff_update', { uid, properties: props });
+  return { ok: true };
+});
+exports.adminSetStaffDisabled = onCall(async (req) => {
+  const a = requireRole(req, ['adex']);
+  const uid = clean(req.data && req.data.uid, 60);
+  const disabled = !!(req.data && req.data.disabled);
+  await staffOf(uid);
+  await admin.auth().updateUser(uid, { disabled });
+  if (disabled) await admin.auth().revokeRefreshTokens(uid);
+  await db.collection('staff').doc(uid).update({ disabled });
+  await audit(a.uid, disabled ? 'staff_disable' : 'staff_enable', { uid });
   return { ok: true };
 });

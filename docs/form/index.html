@@ -38,8 +38,8 @@
     </div>
   </div>
   <script type="module">
-    import { INTAKE_URL, PROPERTIES } from '../js/config.js';
-    document.querySelector('#property').innerHTML = PROPERTIES.map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
+    import { INTAKE_URL, LIST_URL } from '../js/config.js';
+    fetch(LIST_URL).then((r) => r.json()).then((j) => { document.querySelector('#property').innerHTML = j.properties.map((p) => `<option value="${p.id}">${p.name.replace(/[<>&]/g, '')}</option>`).join(''); });
     const $ = (s) => document.querySelector(s);
     const rnd = () => String(Math.floor(1000 + Math.random() * 9000));
     $('#fill').addEventListener('click', () => {

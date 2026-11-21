@@ -3,11 +3,11 @@
 import {
   auth, db, authReady, call, signInWithCustomToken, collection, query, where, getDocs, doc, getDoc, $, $$, esc, fmtDate,
 } from './fb.js';
-import { PROPERTIES, PROPERTY_NAMES, assetKey, ENV_LABEL } from './config.js';
+import { assetKey, ENV_LABEL } from './config.js';
 
 const app = $('#app');
 const tabbar = $('#tabbar');
-const S = { user: null, name: '', memberships: [], notices: [], assets: {}, selected: new Set(), tab: 'new', loaded: false };
+const S = { user: null, name: '', memberships: [], notices: [], properties: [], assets: {}, selected: new Set(), tab: 'new', loaded: false };
 const seenKey = 'pp.seenNotices';
 const seen = () => { try { return new Set(JSON.parse(localStorage.getItem(seenKey) || '[]')); } catch { return new Set(); } };
 const markSeen = (ids) => { const s = seen(); ids.forEach((i) => s.add(i)); localStorage.setItem(seenKey, JSON.stringify([...s])); };
@@ -57,7 +57,7 @@ const ua = navigator.userAgent;
 const isIOS = /iPhone|iPad|iPod/.test(ua);
 const isAndroid = /Android/.test(ua);
 const inApp = /Line\/|FBAN|FBAV|Instagram|MicroMessenger|Twitter/.test(ua);
-const pname = (id) => PROPERTY_NAMES[id] || id;
+const pname = (id) => (S.properties.find((p) => p.id === id) || {}).name || id;
 
 /* ---------- 画面の部品 ---------- */
 const unreadCount = () => { const s = seen(); return S.notices.filter((n) => !s.has(n.id)).length; };
@@ -81,11 +81,13 @@ function setTabs(active) {
 /* ---------- データ ---------- */
 async function loadData() {
   const uid = auth.currentUser.uid;
-  const [cs, ms, as] = await Promise.all([
+  const [cs, ms, as, ps] = await Promise.all([
     getDocs(query(collection(db, 'contacts'), where('cid', '==', uid))),
     getDocs(query(collection(db, 'memberships'), where('cid', '==', uid))),
     getDoc(doc(db, 'config', 'assets')).catch(() => null),
+    getDocs(collection(db, 'properties')),
   ]);
+  S.properties = ps.docs.map((d) => ({ id: d.id, ...d.data() })).filter((p) => p.status !== 'archived').sort((a, b) => (a.order || 0) - (b.order || 0));
   S.name = cs.docs.length ? cs.docs[0].data().name : '';
   S.memberships = ms.docs.map((d) => d.data());
   S.assets = {};
@@ -165,7 +167,7 @@ function viewHome() {
     <div class="hscroll">${RELEASES.map((r) => `<div class="tile"><div class="im tall" ${bg(r.k)}></div><div class="rg">${r.rg}</div><div class="nm">${esc(r.nm)}</div></div>`).join('')}</div>
 
     ${secTitle('Exclusive Residences', '次代まで輝き続けるために', '<a href="#/collection" class="xs muted" style="text-decoration:none">すべて見る</a>')}
-    <div class="hscroll">${PROPERTIES.map((p) => `<a class="tile" href="#/collection"><div class="im" ${bg(assetKey(p.id))}>${S.memberships.some((m) => m.property === p.id) ? '<span class="tag gold nw">ご登録済み</span>' : ''}</div><div class="rg">${p.region}</div><div class="nm">${esc(p.name)}</div></a>`).join('')}</div>
+    <div class="hscroll">${S.properties.map((p) => `<a class="tile" href="#/collection"><div class="im" ${bg(assetKey(p.id))}>${S.memberships.some((m) => m.property === p.id) ? '<span class="tag gold nw">ご登録済み</span>' : ''}</div><div class="rg">${p.region}</div><div class="nm">${esc(p.name)}</div></a>`).join('')}</div>
 
     ${secTitle('Craftsmanship', '継承される5つの真髄')}
     <div class="hscroll">${CRAFT_ORDER.map((k) => `<a class="craft-tile" href="#/craft/${k}"><div class="im" ${bg('slide_' + k)}></div><div class="bd"><div class="en">${CRAFT[k].en}</div><div class="jp">${CRAFT[k].jp}</div><div class="tg">${CRAFT[k].tag}</div></div></a>`).join('')}</div>
@@ -198,7 +200,7 @@ function viewCollection() {
     <p class="muted small" style="margin:0 0 14px">${isNew ? '気になる物件を選んで、まとめてご相談いただけます。' : 'ES CON Prime Concierge が、ご要望に沿った中古物件をご紹介します。未公開物件も多数ございます。'}</p>
   </div>
   <div class="section">
-    ${isNew ? PROPERTIES.map((p) => `<div class="prop">
+    ${isNew ? S.properties.map((p) => `<div class="prop">
       <div class="art" style="${A(assetKey(p.id)) ? `background-image:url('${esc(A(assetKey(p.id)))}')` : ''}"><span class="rgn">${p.region}</span><div class="check ${S.selected.has(p.id) ? 'on' : ''}" data-check="${p.id}">${S.selected.has(p.id) ? ICON.check : ''}</div></div>
       <div class="ttl">${esc(p.name)}</div>
       <div class="xs muted">${esc(p.area)}</div>
@@ -258,7 +260,7 @@ function viewContact() {
   <div class="section">
     <div class="banner">${esc(S.name)} 様<br><span class="muted xs">ご登録の電話・メールを使います（再入力は不要です）</span></div>
     <h2 class="h2">相談したい物件（複数選べます）</h2>
-    <div class="list" id="propList">${PROPERTIES.map((p) => `<div class="list-item" data-p="${p.id}"><span class="tag ${sel.has(p.id) ? 'dark' : ''}" data-mark style="min-width:22px;text-align:center">${sel.has(p.id) ? '✓' : '　'}</span><div class="t">${esc(p.name)}</div><span class="tag" style="margin-left:auto">新築</span></div>`).join('')}</div>
+    <div class="list" id="propList">${S.properties.map((p) => `<div class="list-item" data-p="${p.id}"><span class="tag ${sel.has(p.id) ? 'dark' : ''}" data-mark style="min-width:22px;text-align:center">${sel.has(p.id) ? '✓' : '　'}</span><div class="t">${esc(p.name)}</div><span class="tag" style="margin-left:auto">新築</span></div>`).join('')}</div>
     <h2 class="h2" style="margin-top:22px">折り返しのご希望</h2>
     <div class="chips" id="method"><button class="chip on" data-v="tel">電話</button><button class="chip" data-v="mail">メール</button></div>
     <div class="chips" id="slot" style="margin-top:10px"><button class="chip" data-v="am">午前</button><button class="chip on" data-v="pm">午後</button><button class="chip" data-v="eve">夕方</button><button class="chip" data-v="any">いつでも</button></div>
@@ -287,13 +289,13 @@ function viewContact() {
 function viewVisit() {
   setTabs('#/contact');
   const mine = S.memberships.map((m) => m.property);
-  const prop = mine[0] || PROPERTIES[0].id; let date = ''; let slot = '11:30';
+  const prop = mine[0] || (S.properties[0] || {}).id; let date = ''; let slot = '11:30';
   const base = new Date(); base.setDate(1); base.setMonth(base.getMonth() + 1);
   const y = base.getFullYear(); const m = base.getMonth();
   const first = new Date(y, m, 1).getDay(); const days = new Date(y, m + 1, 0).getDate();
   app.innerHTML = `${subHeader('来場予約', '#/home')}
   <div class="section" style="padding-top:0"><p class="eyebrow">Members exclusive</p><h1 class="display">Your Invitation</h1>
-    <div class="field" style="margin-top:18px"><label>物件</label><select class="input" id="vp">${PROPERTIES.map((p) => `<option value="${p.id}" ${p.id === prop ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+    <div class="field" style="margin-top:18px"><label>物件</label><select class="input" id="vp">${S.properties.map((p) => `<option value="${p.id}" ${p.id === prop ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
     <div class="card"><div class="center" style="font-weight:500;margin-bottom:8px">${y}年${m + 1}月</div>
       <div class="calendar">${['日', '月', '火', '水', '木', '金', '土'].map((d) => `<div class="dow">${d}</div>`).join('')}${'<div></div>'.repeat(first)}${Array.from({ length: days }, (_, i) => { const d = i + 1; const dw = new Date(y, m, d).getDay(); return `<button data-d="${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}" ${dw === 3 ? 'disabled' : ''}>${d}</button>`; }).join('')}</div></div>
     <h2 class="h2" style="margin-top:20px">ご希望の時間</h2>

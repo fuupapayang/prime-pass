@@ -89,6 +89,39 @@ if (rd1.result) {
   console.log('お客様の問い合わせ送信:', await callFn(mtok, 'submitInquiry', { properties: ['meguro62'], kind: 'inquiry', message: '自動テスト', contactMethod: 'mail' }));
   console.log('行動ログの記録:', await callFn(mtok, 'logEvent', { type: 'open' }));
 }
+console.log('\n■ ADEX専用の管理機能（物件・担当者）');
+const callJ = async (tok, name, data) => { const r = await fetch(`${FN}/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` }, body: JSON.stringify({ data }) }); return r.json(); };
+const chk = (label, ok) => { console.log(`${label}: ${ok ? '期待どおり' : 'NG'}`); if (!ok) bad++; };
+const adexTok = await signIn('adex@primepass.test');
+const staff1Tok = await signIn('staff1@primepass.test');
+const PID = 'zz-test-' + Date.now().toString(36);
+chk('担当者が、物件を登録しようとする→拒否', !!(await callJ(staff1Tok, 'adminSaveProperty', { id: PID, name: 'x' })).error);
+chk('ADEXが、物件を登録する→成功', !!(await callJ(adexTok, 'adminSaveProperty', { id: PID, name: '自動テスト物件', region: '首都圏', area: 'テスト', kind: '新築' })).result);
+chk('登録した物件が、フォーム用の一覧に出る', (await (await fetch(`${FN}/listProperties`)).json()).properties.some((x) => x.id === PID));
+chk('ADEXが、物件の掲載を停止する→成功', !!(await callJ(adexTok, 'adminSetPropertyStatus', { id: PID, status: 'archived' })).result);
+await new Promise((r) => setTimeout(r, 1500));
+chk('停止した物件は、フォーム用の一覧から消える', !(await (await fetch(`${FN}/listProperties`)).json()).properties.some((x) => x.id === PID));
+const em = `verify-staff-${Date.now()}@primepass.test`;
+chk('担当者が、担当者アカウントを発行しようとする→拒否', !!(await callJ(staff1Tok, 'adminCreateStaff', { email: em, name: 'x', properties: ['meguro62'] })).error);
+const cr = await callJ(adexTok, 'adminCreateStaff', { email: em, name: '自動テスト担当者', properties: ['meguro62'] });
+chk('ADEXが、担当者アカウントを発行する→成功（パスワードを返す）', !!(cr.result && cr.result.password));
+if (cr.result) {
+  const nr = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: em, password: cr.result.password, returnSecureToken: true }) });
+  const nj = await nr.json();
+  chk('発行した担当者が、ログインできる', !!nj.idToken);
+  if (nj.idToken) {
+    chk('　自分の物件（目黒）は、読める', (await canRead(nj.idToken, 'contacts', 'meguro62')) !== 'X');
+    chk('　他の物件（葉山）は、読めない', (await canRead(nj.idToken, 'contacts', 'hayama24')) === 'X');
+    chk('ADEXが、担当物件を変更する→成功', !!(await callJ(adexTok, 'adminUpdateStaff', { uid: cr.result.uid, properties: ['hayama24'] })).result);
+    const nr2 = await (await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: em, password: cr.result.password, returnSecureToken: true }) })).json();
+    chk('　変更後は、葉山が読めて、目黒は読めない', (await canRead(nr2.idToken, 'contacts', 'hayama24')) !== 'X' && (await canRead(nr2.idToken, 'contacts', 'meguro62')) === 'X');
+    chk('ADEXが、アカウントを停止する→成功', !!(await callJ(adexTok, 'adminSetStaffDisabled', { uid: cr.result.uid, disabled: true })).result);
+    const nr3 = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: em, password: cr.result.password, returnSecureToken: true }) });
+    chk('　停止後は、ログインできない', !nr3.ok);
+  }
+}
+globalThis.__cleanup = { PID, staffUid: cr.result && cr.result.uid };
+
 // 後片付け: 自動テストが作ったお知らせ・登録者を、削除する（best effort。gcloud にログイン済みであること）
 try {
   const AT = execFileSync('gcloud', ['auth', 'print-access-token'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
@@ -106,6 +139,12 @@ try {
     for (const m of ms) n += await del(await run('events', 'anonId', 'EQUAL', m.fields.anonId.stringValue));
     n += await del(ms); n += await del(await run('inquiries', 'cid', 'EQUAL', cid)); n += await del(await run('contacts', 'cid', 'EQUAL', cid));
     n += await del(await run('intakeIndex', 'cid', 'EQUAL', cid));
+  }
+  const { PID: pid, staffUid } = globalThis.__cleanup || {};
+  if (pid) { await fetch(`${DOCS}/properties/${pid}`, { method: 'DELETE', headers: H }); n += 1; }
+  if (staffUid) {
+    await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${P}/accounts:delete`, { method: 'POST', headers: H, body: JSON.stringify({ localId: staffUid }) });
+    await fetch(`${DOCS}/staff/${staffUid}`, { method: 'DELETE', headers: H }); n += 1;
   }
   console.log(`後片付け: テスト用データ ${n} 件を削除しました`);
 } catch (e) { console.log('後片付けをスキップしました：' + e.message.slice(0, 80)); }

@@ -98,7 +98,7 @@ const PROPS = {
   'ost-garden': { name: 'オストガーデン軽井沢', region: '中部', area: '長野県 軽井沢町', kind: '新築' },
   'alia-hawaii': { name: 'ハワイ Alia / Kuilei', region: '海外', area: 'ハワイ', kind: '新築' },
 };
-for (const [id, p] of Object.entries(PROPS)) put(`properties/${id}`, p);
+Object.entries(PROPS).forEach(([id, p], i) => put(`properties/${id}`, { ...p, status: 'active', order: i + 1, url: '' }));
 
 const NAMES = ['山田 太郎', '佐藤 花子', '鈴木 一郎', '高橋 美咲', '田中 健', '伊藤 彩', '渡辺 誠', '中村 玲子', '小林 拓海', '加藤 由美', '吉田 大輔', '山本 優子'];
 const PH = 'hayama24'; const PM = 'meguro62'; const PD = 'doyama227'; const PN = 'naha-asato83'; const PF = 'fvillage508'; const PO = 'ost-garden';
@@ -144,7 +144,7 @@ const INQ = [
 ];
 INQ.forEach(([cid, p, kind, message, cm, d], i) => put(`inquiries/demo_q${i + 1}`, { cid, property: p, kind, message, contactMethod: cm, timeSlot: kind === 'visit' ? '11:30' : '', visitDate: kind === 'visit' ? '2026-12-12' : '', guests: 2, status: 'new', createdAt: daysAgo(d) }));
 
-for (const a of ACCOUNTS) put(`staff/${a.uid}`, { email: a.email, displayName: a.name, role: a.claims.role, properties: a.claims.properties || [] });
+for (const a of ACCOUNTS) put(`staff/${a.uid}`, { email: a.email, displayName: a.name, role: a.claims.role, properties: a.claims.properties || [], disabled: false });
 
 for (let i = 0; i < writes.length; i += 400) {
   await api('POST', `https://firestore.googleapis.com/v1/${DOC}:commit`, { writes: writes.slice(i, i + 400) });
