@@ -347,7 +347,7 @@ function viewPrime() {
   setTabs('#/collection'); S.curProp = null;
   app.innerHTML = `${subHeader('エスコン プライム', '#/home')}
   <div class="pagenote">${ICON.globe.replace('width="20" height="20"', 'width="12" height="12"')} 掲載内容は、ES CON プライムメンバーシップ サイトに準じています（テスト用の表示）</div>
-  <div class="frame-hero" style="height:420px;${A('hero') ? `background-image:url('${esc(A('hero'))}')` : ''}"><div class="k">ESCON PRIME</div><div class="name">暮らしの、その先へ。</div></div>
+  <div class="frame-hero" id="primeHero" style="height:420px;${A('hero') ? `background-image:url('${esc(A('hero'))}')` : ''}"><div class="hero-yt" id="heroYt"></div><div class="k">ESCON PRIME</div><div class="name">暮らしの、その先へ。</div></div>
   <div class="slogan"><p class="jp">この国の技術を未来へ継承し、<br>次世代の暮らしに新たな価値を。</p><p class="en">Heritage and the spirit of Craftsmanship</p></div>
   <div class="section">
     <p class="eyebrow" style="margin-top:6px">BRAND STORY</p>
@@ -366,6 +366,24 @@ function viewPrime() {
     <div class="gal" style="grid-template-columns:repeat(3,1fr);gap:8px">${GALLERY.map((g) => `<div><div class="im" ${bg(g.k)}></div><div class="cap">${esc(g.t)}</div></div>`).join('')}</div>
     ${disclaimer()}
   </div>`;
+  startHeroVideo();
+}
+
+// ES CON プライムメンバーシップ サイトの、トップの動画（YouTube、音なし・自動再生・繰り返し）。再生できない間は、静止画を表示
+function startHeroVideo() {
+  const box = $('#heroYt'); if (!box) return;
+  const VID = 'epWL0sYdzBA';
+  const mount = () => {
+    if (!$('#heroYt')) return;
+    const p = new window.YT.Player('heroYt', { videoId: VID, playerVars: { rel: 0, autoplay: 1, playsinline: 1, mute: 1, controls: 0, modestbranding: 1, iv_load_policy: 3, disablekb: 1, loop: 1, playlist: VID }, events: {
+      onReady: (e) => { e.target.mute(); e.target.playVideo(); },
+      onStateChange: (e) => { if (e.data === window.YT.PlayerState.PLAYING) $('#primeHero')?.classList.add('yt-on'); if (e.data === window.YT.PlayerState.ENDED) { e.target.seekTo(0); e.target.playVideo(); } },
+    } });
+    S.heroPlayer = p;
+  };
+  if (window.YT && window.YT.Player) { mount(); return; }
+  const prev = window.onYouTubeIframeAPIReady; window.onYouTubeIframeAPIReady = () => { if (prev) prev(); mount(); };
+  if (!document.getElementById('ytApi')) { const t = document.createElement('script'); t.id = 'ytApi'; t.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(t); }
 }
 
 function viewProperty(id, sub) {
