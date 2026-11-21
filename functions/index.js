@@ -492,3 +492,64 @@ exports.adminSetPropertyImage = onCall({ memory: '512MiB' }, async (req) => {
   await audit(a.uid, 'property_image_set', { id, bytes: buf.length });
   return { ok: true, imageUrl };
 });
+
+/* ---------- 11. 担当者からのご案内（お客様ごとの、資料・リンク・メッセージ） ---------- */
+const GUIDE_FILE_TYPES = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png' };
+exports.sendGuide = onCall({ memory: '512MiB' }, async (req) => {
+  const auth = requireAuth(req);
+  const role = auth.token.role;
+  const d = req.data || {};
+  const cid = clean(d.cid, 60);
+  const property = clean(d.property, 20);
+  if (!['adex', 'staff'].includes(role) || !canSendTo(auth, property)) {
+    await audit(auth.uid, 'sendGuide_denied', { role, property });
+    throw new HttpsError('permission-denied', 'この方へのご案内は、送れません');
+  }
+  const ms = await db.collection('memberships').doc(`${cid}_${property}`).get();
+  if (!ms.exists) throw new HttpsError('not-found', 'この物件に登録している方では、ありません');
+  const kind = ['file', 'link', 'message'].includes(d.kind) ? d.kind : 'message';
+  const title = clean(d.title, 60);
+  if (!title) throw new HttpsError('invalid-argument', 'タイトルが必要です');
+  const doc = { cid, property, kind, title, message: clean(d.message, 500), staffName: clean(auth.token.name || (role === 'adex' ? 'ADEX' : '担当者'), 40), createdBy: auth.uid, createdByRole: role, createdAt: FieldValue.serverTimestamp(), readAt: null };
+  const ref = db.collection('guides').doc();
+  if (kind === 'link') {
+    const url = clean(d.url, 500);
+    if (!/^https:\/\//.test(url)) throw new HttpsError('invalid-argument', 'リンクは、https:// で始まるものにしてください');
+    doc.url = url;
+  } else if (kind === 'file') {
+    const f = d.file || {};
+    const ext = GUIDE_FILE_TYPES[f.contentType];
+    if (!ext) throw new HttpsError('invalid-argument', 'ファイルは、PDF・JPEG・PNGのいずれかにしてください');
+    const buf = Buffer.from(String(f.data || ''), 'base64');
+    if (!buf.length || buf.length > 4 * 1024 * 1024) throw new HttpsError('invalid-argument', 'ファイルは、4MB以下にしてください');
+    const safe = clean(f.name, 80).replace(/[^\w.\-ぁ-んァ-ヶ一-龠]/g, '_') || `file.${ext}`;
+    const path = `guides/${cid}/${ref.id}-${safe}`;
+    const token = crypto.randomUUID();
+    await admin.storage().bucket(BUCKET).file(path).save(buf, { contentType: f.contentType, metadata: { cacheControl: 'private, max-age=3600', metadata: { firebaseStorageDownloadTokens: token } } });
+    doc.fileName = safe; doc.fileSize = buf.length; doc.filePath = path;
+    doc.fileUrl = `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+  } else if (!doc.message) throw new HttpsError('invalid-argument', 'メッセージが必要です');
+  await ref.set(doc);
+  // 通知（文面には、個人情報を入れない）
+  let pushed = 0;
+  if (d.push !== false) {
+    const t = await db.collection('pushTokens').doc(cid).get();
+    const tokens = t.exists ? t.data().tokens || [] : [];
+    if (tokens.length) {
+      const r = await admin.messaging().sendEachForMulticast({ tokens, notification: { title: '担当者からのご案内が届きました', body: 'アプリでご確認ください' }, webpush: { fcmOptions: { link: SITE + '#/notices' } }, data: { guideId: ref.id } });
+      pushed = r.successCount;
+    }
+  }
+  await audit(auth.uid, 'guide_send', { role, property, kind, pushed });
+  return { id: ref.id, pushed };
+});
+
+exports.markGuideRead = onCall(async (req) => {
+  const auth = requireAuth(req);
+  if (auth.token.role !== 'member') throw new HttpsError('permission-denied', 'お客様のみ');
+  const ref = db.collection('guides').doc(clean(req.data && req.data.id, 60));
+  const snap = await ref.get();
+  if (!snap.exists || snap.data().cid !== auth.uid) throw new HttpsError('not-found', 'ご案内が見つかりません');
+  if (!snap.data().readAt) await ref.update({ readAt: FieldValue.serverTimestamp() });
+  return { ok: true };
+});

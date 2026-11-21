@@ -55,6 +55,13 @@ service cloud.firestore {
                   || isStaffOf(resource.data.property);
     }
 
+    // 担当者からのご案内（お客様ごと）。本人と、ADEXと、自物件の担当者だけ（QLEA・本社は不可）
+    match /guides/{id} {
+      allow read: if isRole('adex')
+                  || isStaffOf(resource.data.property)
+                  || (isRole('member') && resource.data.cid == request.auth.uid);
+    }
+
     // 配信前の通知（下書き・承認待ち・予約）。ADEXと、自物件の担当者だけ
     match /outbox/{id} {
       allow read: if isRole('adex') || isStaffOf(resource.data.property);

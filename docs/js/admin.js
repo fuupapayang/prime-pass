@@ -51,7 +51,7 @@ function viewLogin(msg = '') {
 /* ---------- データ取得（役割に応じて、許される範囲だけ） ---------- */
 async function fetchScoped(col) {
   const out = [];
-  if (['adex', 'qlea', 'escon'].includes(S.claims.role) && col !== 'inquiries' && col !== 'contacts' && col !== 'outbox') {
+  if (['adex', 'qlea', 'escon'].includes(S.claims.role) && col !== 'inquiries' && col !== 'contacts' && col !== 'outbox' && col !== 'guides') {
     (await getDocs(collection(db, col))).forEach((d) => out.push({ id: d.id, ...d.data() }));
     return out;
   }
@@ -71,6 +71,7 @@ async function loadAll() {
   d.events = await fetchScoped('events');
   d.contacts = can.contacts() ? await fetchScoped('contacts') : [];
   d.outbox = can.send() ? await fetchScoped('outbox') : [];
+  d.guides = can.send() ? await fetchScoped('guides') : [];
   d.inquiries = can.inquiries() ? await fetchScoped('inquiries') : [];
   if (can.audit()) {
     d.audit = []; (await getDocs(collection(db, 'auditLogs'))).forEach((x) => d.audit.push({ id: x.id, ...x.data() }));
@@ -170,7 +171,8 @@ function detailMember() {
   <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px">Member Profile</h1>
   <div style="display:flex;gap:12px;align-items:center;margin:16px 0">${avatar(showPII ? c?.name : 'M')}<div><div style="font-family:var(--serif-jp);font-size:19px">${showPII ? esc(c?.name || '—') + ' 様' : `<span class="mono">${esc(m.anonId)}</span>`}</div><div>${(m.tags || []).map((t) => `<span class="tag">${esc(TAGL[t] || t)}</span>`).join(' ')} <span class="tag dark">会員</span></div></div></div>
   ${showPII ? `<div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><span class="muted">電話</span><a href="tel:${esc(c?.phone)}">${esc(c?.phone)}</a></div><div class="kv" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><span class="muted">メール</span><a href="mailto:${esc(c?.email)}">${esc(c?.email)}</a></div><p class="xs muted" style="margin-top:8px">個人情報の閲覧は、ES CONの担当者・ADEXのみです。</p>` : '<div class="banner warn">個人情報は、この役割では見えません。</div>'}
-  <div style="display:flex;gap:10px;margin-top:18px"><button class="btn" style="flex:1" data-soon="個別に送る">個別に送る</button><button class="btn ghost" style="flex:1" data-soon="タグを編集">タグを編集</button></div>
+  <div style="display:flex;gap:10px;margin-top:18px"><button class="btn" style="flex:1" id="guideBtn" ${showPII && can.send() ? '' : 'disabled'}>個別に送る</button><button class="btn ghost" style="flex:1" data-soon="タグを編集">タグを編集</button></div>
+  ${showPII && can.send() ? `<h2 class="h2" style="margin-top:24px">送ったご案内</h2><div class="list">${(d.guides || []).filter((g) => g.cid === m.cid && g.property === m.property).sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)).map((g) => `<div class="list-item" style="cursor:default"><div><div class="t" style="font-size:13px">${esc(g.title)}</div><div class="d">${{ file: 'ファイル', link: 'リンク', message: 'メッセージ' }[g.kind]}　${fmtDate(g.createdAt)}　${g.readAt ? '既読' : '<span style="color:var(--danger)">未読</span>'}</div></div></div>`).join('') || '<div class="muted small">まだ送っていません</div>'}</div>` : ''}
   <h2 class="h2" style="margin-top:24px">登録している物件</h2><div class="chips">${regs.map((x) => `<span class="tag dark">${pn(x.property)}</span>`).join('')}</div>
   <h2 class="h2" style="margin-top:24px">行動の履歴</h2>
   <div class="list">${evs.map((e) => `<div class="list-item" style="cursor:default"><span style="width:7px;height:7px;border-radius:50%;background:var(--gold);margin-top:9px;flex:none"></span><div><div class="t" style="font-size:13px">${esc(lab[e.type] || e.type)}</div><div class="d">${pn(e.property)}　${fmtDate(e.ts)}</div></div></div>`).join('') || '<div class="muted small">まだありません</div>'}</div>`;
@@ -330,6 +332,43 @@ function tabMenu() {
   <button class="btn ghost" id="lo2" style="margin-top:18px;color:var(--danger);border-color:var(--danger)">ログアウト</button>`;
 }
 
+function detailGuide() {
+  const m = S.data.memberships.find((x) => x.cid + '_' + x.property === S.detail.mid); const c = S.data.contacts.find((x) => x.id === S.detail.mid);
+  const k = S.gkind || 'file';
+  return `<button class="btn sm ghost" id="back">‹ 登録者の詳細へ</button>
+  <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Personal Invitation</h1>
+  <div style="background:var(--soft);padding:12px 14px;display:flex;gap:12px;align-items:center;margin-bottom:14px">${avatar(c?.name)}<div><div class="xs muted">宛先</div><div style="font-weight:500">${esc(c?.name || '—')} 様（1名）</div><div class="xs muted">${pn(m?.property)}</div></div></div>
+  <div class="seg" id="gk">${[['file', 'ファイル'], ['link', 'リンク'], ['message', 'メッセージ']].map(([v, l]) => `<button data-v="${v}" class="${k === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+  ${k === 'file' ? `<div class="field"><label>ファイルを選ぶ（PDF・JPEG・PNG、4MBまで）</label><input class="input" type="file" id="gf" accept="application/pdf,image/jpeg,image/png"></div>` : ''}
+  ${k === 'link' ? `<div class="field"><label>リンク（https://）</label><input class="input" id="gu" placeholder="https://" maxlength="500"></div>` : ''}
+  <div class="field"><label>タイトル（60文字まで）</label><input class="input" id="gt" maxlength="60" placeholder="例：個別プラン資料"></div>
+  <div class="field"><label>メッセージ${k === 'message' ? '' : '（任意）'}</label><textarea class="input" id="gm" maxlength="500" placeholder="例：ご相談のプランをまとめました。ご確認ください。"></textarea></div>
+  <h2 class="h2">届け方</h2>
+  <label class="small" style="display:flex;gap:10px;align-items:flex-start;margin:6px 0"><input type="checkbox" id="gpush" checked style="margin-top:4px"><span>アプリに表示し、プッシュ通知で知らせる<br><span class="xs muted">通知の文面には、個人情報は入りません。</span></span></label>
+  <label class="small" style="display:flex;gap:10px;align-items:flex-start;margin:6px 0 16px;opacity:.5"><input type="checkbox" disabled style="margin-top:4px"><span>メールでも送る（準備中）<br><span class="xs muted">メールには、アプリへのリンクのみを記載します。</span></span></label>
+  <button class="btn" id="gsend">送る</button><div id="gres" style="margin-top:12px"></div>`;
+}
+function bindGuide() {
+  $$('#gk button').forEach((b) => b.addEventListener('click', () => { S.gkind = b.dataset.v; render(); }));
+  $('#gsend').addEventListener('click', async (e) => {
+    const k = S.gkind || 'file'; const m = S.data.memberships.find((x) => x.cid + '_' + x.property === S.detail.mid);
+    const payload = { cid: m.cid, property: m.property, kind: k, title: $('#gt').value, message: $('#gm').value, push: $('#gpush').checked };
+    e.target.disabled = true; $('#gres').innerHTML = '';
+    try {
+      if (k === 'link') payload.url = $('#gu').value;
+      if (k === 'file') {
+        const f = $('#gf').files[0]; if (!f) throw new Error('ファイルを選んでください');
+        if (f.size > 4 * 1024 * 1024) throw new Error('ファイルは、4MB以下にしてください');
+        const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(f); });
+        payload.file = { name: f.name, contentType: f.type, data };
+      }
+      const r = await call('sendGuide')(payload);
+      await loadAll(); S.detail = { type: 'member', id: S.detail.mid }; render();
+      $('#main').insertAdjacentHTML('afterbegin', `<div class="banner ok">送りました。${r.data.pushed ? '通知も届けました' : '（通知の宛先がないため、通知は届いていません。アプリを開くと見られます）'}</div>`);
+    } catch (err) { $('#gres').innerHTML = `<div class="banner err">${esc(err.message)}</div>`; e.target.disabled = false; }
+  });
+}
+
 function tabEvents() {
   const rows = fd(S.data.events).slice().sort((a, b) => (b.ts?.toMillis?.() || 0) - (a.ts?.toMillis?.() || 0)).slice(0, 60);
   const lab = { open: 'アプリを開いた', notice_open: 'お知らせを開いた', checkin: 'チェックイン（ホーム画面から起動）' };
@@ -338,7 +377,7 @@ function tabEvents() {
   ${rows.map((e) => `<tr><td>${fmtDate(e.ts)}</td><td class="mono">${esc(e.anonId)}</td><td>${pn(e.property)}</td><td>${esc(lab[e.type] || e.type)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">まだありません</td></tr>'}</tbody></table></div>`;
 }
 
-const AUDIT_JA = { sendNotice: ['通知を配信', '配信', '#2e7d5b'], sendNotice_denied: ['通知の配信を拒否', '権限', '#b3402f'], intake: ['登録フォームから登録', '登録', '#2f6db5'], property_create: ['物件を登録', '物件', '#997544'], property_update: ['物件を更新', '物件', '#997544'], property_archive: ['物件の掲載を停止', '物件', '#b3402f'], property_restore: ['物件の掲載を再開', '物件', '#2e7d5b'], staff_create: ['担当者を発行', '権限', '#b3402f'], staff_update: ['担当物件を変更', '権限', '#b3402f'], staff_disable: ['担当者を停止', '権限', '#b3402f'], staff_enable: ['担当者を再開', '権限', '#2e7d5b'], inquiry_status: ['問い合わせの状況を変更', '対応', '#2f6db5'], notice_submit: ['通知の承認を依頼', '承認', '#997544'], notice_approve: ['通知を承認', '承認', '#2e7d5b'], notice_reject: ['通知を差し戻し', '承認', '#b3402f'], notice_schedule: ['通知を予約', '配信', '#2f6db5'], notice_withdraw: ['通知を取り下げ', '承認', '#7d7b6e'], property_image_set: ['物件の画像を登録', '物件', '#997544'], property_image_remove: ['物件の画像を外す', '物件', '#997544'], saveNotice_denied: ['通知の作成を拒否', '権限', '#b3402f'] };
+const AUDIT_JA = { sendNotice: ['通知を配信', '配信', '#2e7d5b'], sendNotice_denied: ['通知の配信を拒否', '権限', '#b3402f'], intake: ['登録フォームから登録', '登録', '#2f6db5'], property_create: ['物件を登録', '物件', '#997544'], property_update: ['物件を更新', '物件', '#997544'], property_archive: ['物件の掲載を停止', '物件', '#b3402f'], property_restore: ['物件の掲載を再開', '物件', '#2e7d5b'], staff_create: ['担当者を発行', '権限', '#b3402f'], staff_update: ['担当物件を変更', '権限', '#b3402f'], staff_disable: ['担当者を停止', '権限', '#b3402f'], staff_enable: ['担当者を再開', '権限', '#2e7d5b'], inquiry_status: ['問い合わせの状況を変更', '対応', '#2f6db5'], notice_submit: ['通知の承認を依頼', '承認', '#997544'], notice_approve: ['通知を承認', '承認', '#2e7d5b'], notice_reject: ['通知を差し戻し', '承認', '#b3402f'], notice_schedule: ['通知を予約', '配信', '#2f6db5'], notice_withdraw: ['通知を取り下げ', '承認', '#7d7b6e'], guide_send: ['ご案内を送信', '個別', '#2f6db5'], sendGuide_denied: ['ご案内の送信を拒否', '権限', '#b3402f'], property_image_set: ['物件の画像を登録', '物件', '#997544'], property_image_remove: ['物件の画像を外す', '物件', '#997544'], saveNotice_denied: ['通知の作成を拒否', '権限', '#b3402f'] };
 function tabAdmin() {
   const d = S.data;
   return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:12px">Audit Trail</h1>
@@ -470,7 +509,7 @@ function bindStaff() {
 
 function render(full = true) {
   const views = { overview: tabOverview, members: tabMembers, notices: tabNotices, inquiries: tabInquiries, reservations: tabReservations, events: tabEvents, admin: tabAdmin, properties: tabProperties, staff: tabStaff, menu: tabMenu };
-  const dv = { member: detailMember, inq: detailInquiry, compose: detailCompose, review: detailReview, property: detailProperty, newstaff: detailStaff };
+  const dv = { member: detailMember, inq: detailInquiry, compose: detailCompose, review: detailReview, guide: detailGuide, property: detailProperty, newstaff: detailStaff };
   const inner = S.detail ? dv[S.detail.type]() : views[S.tab]();
   shell(inner);
   const back = $('#back'); if (back) back.addEventListener('click', () => { S.detail = null; render(); });
@@ -480,6 +519,8 @@ function render(full = true) {
     if (S.detail.type === 'inq') bindInquiryDetail();
     if (S.detail.type === 'compose') bindCompose();
     if (S.detail.type === 'review') bindReview();
+    if (S.detail.type === 'guide') bindGuide();
+    if (S.detail.type === 'member') { const gb = $('#guideBtn'); if (gb) gb.addEventListener('click', () => { S.detail = { type: 'guide', mid: S.detail.id }; render(); window.scrollTo(0, 0); }); }
     if (S.detail.type === 'property') bindProperties();
     if (S.detail.type === 'newstaff') bindStaff();
     return;

@@ -7,7 +7,7 @@ import { assetKey, ENV_LABEL } from './config.js';
 
 const app = $('#app');
 const tabbar = $('#tabbar');
-const S = { user: null, name: '', contact: null, memberships: [], notices: [], properties: [], assets: {}, selected: new Set(), tab: 'new', loaded: false, curProp: null, noticeFilter: 'all', last: null, deferred: null };
+const S = { user: null, name: '', contact: null, memberships: [], notices: [], guides: [], properties: [], assets: {}, selected: new Set(), tab: 'new', loaded: false, curProp: null, noticeFilter: 'all', last: null, deferred: null };
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); S.deferred = e; });
 const seenKey = 'pp.seenNotices';
 const seen = () => { try { return new Set(JSON.parse(localStorage.getItem(seenKey) || '[]')); } catch { return new Set(); } };
@@ -82,7 +82,7 @@ const inApp = /Line\/|FBAN|FBAV|Instagram|MicroMessenger|Twitter/.test(ua);
 const pname = (id) => (S.properties.find((p) => p.id === id) || {}).name || id;
 
 /* ---------- 画面の部品 ---------- */
-const unreadCount = () => { const s = seen(); return S.notices.filter((n) => !s.has(n.id)).length; };
+const unreadCount = () => { const s = seen(); return S.notices.filter((n) => !s.has(n.id)).length + S.guides.filter((g) => !g.readAt).length; };
 const topbar = (right = true) => `
   <div class="topbar">
     <div class="brand"><span class="mark">P</span>PRIME PASS</div>
@@ -115,6 +115,7 @@ async function loadData() {
   S.memberships = ms.docs.map((d) => d.data());
   S.assets = {};
   if (as && as.exists()) Object.assign(S.assets, as.data().urls || {});
+  try { const gs = await getDocs(query(collection(db, 'guides'), where('cid', '==', uid))); S.guides = gs.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)); } catch { S.guides = []; }
   const lists = await Promise.all(S.memberships.map((m) => getDocs(query(collection(db, 'notices'), where('property', '==', m.property)))));
   S.notices = lists.flatMap((l) => l.docs.map((d) => ({ id: d.id, ...d.data() })))
     .sort((a, b) => (b.publishedAt?.toMillis?.() || 0) - (a.publishedAt?.toMillis?.() || 0));
@@ -377,7 +378,7 @@ function viewNotices() {
   <div class="section" style="padding-bottom:6px"><p class="eyebrow">Members exclusive</p><h1 class="display">Letters to Members</h1>
     <div class="chips" id="nf" style="margin-top:14px"><button class="chip ${S.noticeFilter === 'all' ? 'on' : ''}" data-v="all">すべて</button>${regs.map((p) => `<button class="chip ${S.noticeFilter === p ? 'on' : ''}" data-v="${esc(p)}">${esc(pname(p))}</button>`).join('')}</div>
   </div>
-  <div class="section">${list.length ? list.map((n) => noticeRow(n, s)).join('') : '<div class="muted small">お知らせは、まだありません</div>'}${disclaimer()}</div>`;
+  <div class="section"><a class="nrow" href="#/guide" style="display:flex;align-items:center;gap:12px"><span style="color:var(--gold)">${ICON.mail}</span><div style="flex:1"><div class="t">担当者からのご案内</div><div class="d" style="font-size:11px;color:var(--muted)">お客様宛の資料・リンク・メッセージ</div></div>${S.guides.filter((g) => !g.readAt).length ? `<span class="tag red">未読 ${S.guides.filter((g) => !g.readAt).length}</span>` : `<span class="muted xs">${S.guides.length}件</span>`}<span class="muted">${ICON.chev}</span></a>${list.length ? list.map((n) => noticeRow(n, s)).join('') : '<div class="muted small">お知らせは、まだありません</div>'}${disclaimer()}</div>`;
   $$('#nf .chip').forEach((b) => b.addEventListener('click', () => { S.noticeFilter = b.dataset.v; viewNotices(); }));
 }
 
@@ -397,6 +398,30 @@ function viewNotice(id) {
     <button class="btn" id="askBtn">この件について相談する</button>
   </div>`;
   $('#askBtn').addEventListener('click', () => { S.selected = new Set([n.property]); location.hash = '#/contact'; });
+}
+
+const GK = { file: ICON.doc, link: ICON.globe, message: ICON.mail };
+function viewGuides() {
+  setTabs('#/notices');
+  app.innerHTML = `${subHeader('担当者からのご案内', '#/notices')}<div class="section" style="padding-top:0"><p class="eyebrow">Members exclusive</p><h1 class="display">From Your Concierge</h1>
+    <div style="display:flex;gap:10px;align-items:center;color:var(--muted);font-size:11px;margin:16px 0 8px"><span style="color:var(--gold)">${ICON.user}</span><span>${esc(S.name)} 様宛にお届けしている資料です。他の方には、表示されません。</span></div>
+    <div class="list">${S.guides.length ? S.guides.map((g) => `<a class="list-item" href="#/guide/${esc(g.id)}" style="text-decoration:none;color:inherit;align-items:center"><span style="color:var(--muted);flex:none">${GK[g.kind] || ICON.mail}</span><div style="flex:1;min-width:0"><div class="t">${esc(g.title)}</div><div class="d">担当：${esc(g.staffName || '')}　${fmtDate(g.createdAt)}</div></div>${g.readAt ? '' : '<span class="reddot" style="margin-top:0"></span>'}<span class="chev">${ICON.chev}</span></a>`).join('') : '<div class="list-item"><div class="d">ご案内は、まだありません</div></div>'}</div>
+    <div style="margin-top:20px"><button class="btn" data-go="#/contact">この件について相談する</button></div></div>`;
+}
+function viewGuide(id) {
+  setTabs('#/notices');
+  const g = S.guides.find((x) => x.id === id);
+  if (!g) { location.hash = '#/guide'; return; }
+  if (!g.readAt) { g.readAt = { toDate: () => new Date() }; call('markGuideRead')({ id }).catch(() => {}); }
+  app.innerHTML = `${subHeader('ご案内', '#/guide')}<div class="section" style="padding-top:0"><p class="eyebrow">Members exclusive</p><h1 class="display">From Your Concierge</h1>
+    <div style="display:flex;gap:8px;align-items:center;margin:16px 0 8px"><span class="tag">${esc(pname(g.property))}</span><span class="xs muted">担当：${esc(g.staffName || '')}　${fmtDate(g.createdAt)}</span></div>
+    <h2 class="display-jp" style="font-size:19px;line-height:1.6">${esc(g.title)}</h2>
+    ${g.message ? `<p style="font-size:13px;line-height:1.9;margin-top:14px">${esc(g.message).replace(/\n/g, '<br>')}</p>` : ''}
+    ${g.kind === 'file' ? `<a class="btn" style="margin-top:18px" href="${esc(g.fileUrl)}" target="_blank" rel="noopener">${ICON.doc}　資料を開く（${esc(g.fileName || '')}）</a>` : ''}
+    ${g.kind === 'link' ? `<a class="btn" style="margin-top:18px" href="${esc(g.url)}" target="_blank" rel="noopener">リンクを開く ↗</a>` : ''}
+    <div class="note-info">お客様宛にお届けしている内容です。第三者への転送は、お控えください。</div>
+    <button class="btn ghost" id="askG">この件について相談する</button></div>`;
+  $('#askG').addEventListener('click', () => { S.selected = new Set([g.property]); location.hash = '#/contact'; });
 }
 
 function viewThanks() {
@@ -562,8 +587,9 @@ function route() {
   let m;
   if ((m = r.match(/^#\/craft\/(\w+)$/))) viewCraft(m[1]);
   else if ((m = r.match(/^#\/notice\/([\w-]+)$/))) viewNotice(m[1]);
+  else if ((m = r.match(/^#\/guide\/([\w-]+)$/))) viewGuide(m[1]);
   else if ((m = r.match(/^#\/p\/([\w-]+)(?:\/(plans|gallery))?$/))) viewProperty(m[1], m[2]);
-  else ({ '#/home': viewHome, '#/prime': viewPrime, '#/collection': viewCollection, '#/notices': viewNotices, '#/contact': viewContact, '#/visit': viewVisit, '#/install': viewInstall, '#/push': viewPush, '#/ready': viewReady, '#/thanks': viewThanks, '#/settings': viewSettings }[r] || viewHome)();
+  else ({ '#/home': viewHome, '#/prime': viewPrime, '#/collection': viewCollection, '#/notices': viewNotices, '#/guide': viewGuides, '#/contact': viewContact, '#/visit': viewVisit, '#/install': viewInstall, '#/push': viewPush, '#/ready': viewReady, '#/thanks': viewThanks, '#/settings': viewSettings }[r] || viewHome)();
   window.scrollTo(0, 0);
 }
 document.addEventListener('click', (e) => {

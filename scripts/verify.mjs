@@ -88,6 +88,31 @@ if (rd1.result) {
   console.log('お客様が、通知を配信する:', await callFn(mtok, 'sendNotice', { property: 'meguro62', title: 'x', body: 'y' }));
   console.log('お客様の問い合わせ送信:', await callFn(mtok, 'submitInquiry', { properties: ['meguro62'], kind: 'inquiry', message: '自動テスト', contactMethod: 'mail' }));
   console.log('行動ログの記録:', await callFn(mtok, 'logEvent', { type: 'open' }));
+  // ---- 担当者からのご案内 ----
+  console.log('\n■ 担当者からのご案内');
+  const gcid = JSON.parse(Buffer.from(mtok.split('.')[1], 'base64url')).user_id;
+  const sT = await signIn('staff1@primepass.test'); const sT2 = await signIn('staff2@primepass.test'); const aT = await signIn('adex@primepass.test');
+  const gchk = (label, ok) => { console.log(`${label}: ${ok ? '期待どおり' : 'NG'}`); if (!ok) bad++; };
+  const gj = async (tok, data) => { const r = await fetch(`${FN}/sendGuide`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` }, body: JSON.stringify({ data }) }); return r.json(); };
+  gchk('担当外の担当者（葉山）が、目黒の方へ送る→拒否', !!(await gj(sT, { cid: gcid, property: 'meguro62', kind: 'message', title: '[自動テスト] x', message: 'x' })).error);
+  gchk('リンクが https でない→拒否', !!(await gj(sT2, { cid: gcid, property: 'meguro62', kind: 'link', title: '[自動テスト] x', url: 'http://example.com' })).error);
+  gchk('登録していない物件の方へ送る→拒否', !!(await gj(aT, { cid: gcid, property: 'hayama24', kind: 'message', title: '[自動テスト] x', message: 'x' })).error);
+  gchk('担当者（目黒）が、リンクを送る→成功', !!(await gj(sT2, { cid: gcid, property: 'meguro62', kind: 'link', title: '[自動テスト] リンク', url: 'https://example.com/plan', message: 'ご確認ください' })).result);
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const gf = await gj(aT, { cid: gcid, property: 'meguro62', kind: 'file', title: '[自動テスト] ファイル', file: { name: '個別プラン.png', contentType: 'image/png', data: PNG } });
+  gchk('ADEXが、ファイルを送る→成功', !!gf.result);
+  gchk('許可されていない形式（GIF）→拒否', !!(await gj(aT, { cid: gcid, property: 'meguro62', kind: 'file', title: '[自動テスト] x', file: { name: 'a.gif', contentType: 'image/gif', data: PNG } })).error);
+  const myG = await qdocs(mtok, 'guides', 'cid', gcid);
+  gchk('お客様が、自分宛のご案内を読める（2件）', myG.length === 2);
+  const furl = myG.map((d) => d.fields.fileUrl && d.fields.fileUrl.stringValue).find(Boolean);
+  if (furl) gchk('　届いたファイルを、取得できる', (await fetch(furl)).status === 200);
+  gchk('お客様が、他の方宛のご案内を読む→拒否', (await qdocs(mtok, 'guides', 'cid', 'demo_c01')).length === 0);
+  gchk('担当外の担当者（葉山）が、目黒のご案内を読む→拒否', (await qdocs(sT, 'guides', 'property', 'meguro62')).length === 0);
+  gchk('担当者（目黒）が、自分の物件のご案内を読める', (await qdocs(sT2, 'guides', 'property', 'meguro62')).length >= 2);
+  const gid = myG[0].name.split('/').pop();
+  gchk('お客様が、既読にする→成功', !!(await callJ(mtok, 'markGuideRead', { id: gid })).result);
+  gchk('　既読の時刻が記録される', (await qdocs(mtok, 'guides', 'cid', gcid)).some((d) => d.fields.readAt && d.fields.readAt.timestampValue));
+  gchk('お客様が、ご案内を送ろうとする→拒否', !!(await gj(mtok, { cid: gcid, property: 'meguro62', kind: 'message', title: 'x', message: 'x' })).error);
 }
 console.log('\n■ ADEX専用の管理機能（物件・担当者）');
 const callJ = async (tok, name, data) => { const r = await fetch(`${FN}/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` }, body: JSON.stringify({ data }) }); return r.json(); };
@@ -182,6 +207,9 @@ try {
     const cid = c.fields.cid.stringValue;
     const ms = await run('memberships', 'cid', 'EQUAL', cid);
     for (const m of ms) n += await del(await run('events', 'anonId', 'EQUAL', m.fields.anonId.stringValue));
+    const gsd = await run('guides', 'cid', 'EQUAL', cid);
+    for (const g of gsd) { if (g.fields.filePath) await fetch(`https://storage.googleapis.com/storage/v1/b/smipocket-stg.firebasestorage.app/o/${encodeURIComponent(g.fields.filePath.stringValue)}`, { method: 'DELETE', headers: H }); }
+    n += await del(gsd);
     n += await del(ms); n += await del(await run('inquiries', 'cid', 'EQUAL', cid)); n += await del(await run('contacts', 'cid', 'EQUAL', cid));
     n += await del(await run('intakeIndex', 'cid', 'EQUAL', cid));
   }
