@@ -345,6 +345,13 @@ function viewHome() {
 
 // エスコンプライムサイトから登録した方は、アプリのホームが、エスコン プライムのページになる
 const isPrimeMember = () => S.memberships.some((m) => m.property === 'prime');
+// アプリのホーム＝「登録したサイト」。プライムサイトから登録した方は、エスコン プライム。物件の限定ページから登録した方は、その物件のページ
+function renderHome() {
+  if (isPrimeMember()) return viewPrime(true);
+  const ms = S.memberships.slice().sort((a, b) => (b.joinedAt?.toMillis?.() || 0) - (a.joinedAt?.toMillis?.() || 0));
+  const p = ms.map((m) => m.property).find((id) => S.properties.some((x) => x.id === id));
+  return p ? viewProperty(p) : viewHome();
+}
 function viewPrime(asHome) {
   setTabs(asHome ? '#/home' : '#/collection'); S.curProp = null;
   const s0 = seen(); const latest0 = S.notices.slice().sort((a, b) => (b.publishedAt?.toMillis?.() || 0) - (a.publishedAt?.toMillis?.() || 0)).slice(0, 3);
@@ -687,7 +694,7 @@ async function enablePush(silent) {
     return true;
   } catch (e) { why('通知を設定できませんでした：' + esc(e.message || String(e))); return false; }
 }
-async function refreshNotices() { try { await loadData(); const r = currentRoute(); if (r === '#/home') (isPrimeMember() ? viewPrime(true) : viewHome()); if (r === '#/notices') viewNotices(); } catch { /* noop */ } }
+async function refreshNotices() { try { await loadData(); const r = currentRoute(); if (r === '#/home') renderHome(); if (r === '#/notices') viewNotices(); } catch { /* noop */ } }
 
 /* ---------- 起動・ルーティング ---------- */
 const currentRoute = () => location.hash || '#/home';
@@ -699,7 +706,7 @@ function route() {
   else if ((m = r.match(/^#\/notice\/([\w-]+)$/))) viewNotice(m[1]);
   else if ((m = r.match(/^#\/guide\/([\w-]+)$/))) viewGuide(m[1]);
   else if ((m = r.match(/^#\/p\/([\w-]+)(?:\/(plans|gallery))?$/))) viewProperty(m[1], m[2]);
-  else ({ '#/home': () => (isPrimeMember() ? viewPrime(true) : viewHome()), '#/prime': () => viewPrime(false), '#/collection': viewCollection, '#/notices': viewNotices, '#/guide': viewGuides, '#/contact': viewContact, '#/visit': viewVisit, '#/install': viewInstall, '#/push': viewPush, '#/ready': viewReady, '#/thanks': viewThanks, '#/settings': viewSettings }[r] || viewHome)();
+  else ({ '#/home': renderHome, '#/prime': () => viewPrime(false), '#/collection': viewCollection, '#/notices': viewNotices, '#/guide': viewGuides, '#/contact': viewContact, '#/visit': viewVisit, '#/install': viewInstall, '#/push': viewPush, '#/ready': viewReady, '#/thanks': viewThanks, '#/settings': viewSettings }[r] || viewHome)();
   window.scrollTo(0, 0);
 }
 document.addEventListener('click', (e) => {
