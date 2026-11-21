@@ -7,7 +7,7 @@ const P = 'smipocket-stg';
 const KEY = 'AIzaSyC8f-gfj7rVvrkXwErw1bdC5HMixpI9kfA';
 const FN = `https://asia-northeast1-${P}.cloudfunctions.net`;
 const PW = readFileSync('.local/test-accounts.txt', 'utf8').match(/共通パスワード: (\S+)/)[1];
-const PROPS = ['a', 'b', 'c'];
+const PROPS = ['hayama24', 'meguro62', 'doyama227', 'ost-garden'];
 const COLS = ['memberships', 'contacts', 'inquiries', 'events', 'notices'];
 
 const signIn = async (email) => {
@@ -37,7 +37,7 @@ const EXPECT = (role, own, p) => {
     case 'staff': return { memberships: +mine, contacts: +mine, inquiries: +mine, events: +mine, notices: +mine };
   }
 };
-const USERS = [['adex@primepass.test', 'adex', []], ['qlea@primepass.test', 'qlea', []], ['escon@primepass.test', 'escon', []], ['staff1@primepass.test', 'staff', ['a']], ['staff2@primepass.test', 'staff', ['b']], ['staff3@primepass.test', 'staff', ['c']]];
+const USERS = [['adex@primepass.test', 'adex', []], ['qlea@primepass.test', 'qlea', []], ['escon@primepass.test', 'escon', []], ['staff1@primepass.test', 'staff', ['hayama24']], ['staff2@primepass.test', 'staff', ['meguro62']], ['staff3@primepass.test', 'staff', ['doyama227']]];
 
 let bad = 0;
 console.log('■ 閲覧権限（○=読める ×=拒否）　期待と違う場合は NG を表示');
@@ -60,7 +60,7 @@ for (const [email, role, own] of USERS) {
 }
 
 console.log('\n■ 通知の配信（sendNotice）');
-const SEND = [['adex@primepass.test', 'a', '成功'], ['qlea@primepass.test', 'a', '拒否'], ['escon@primepass.test', 'a', '拒否'], ['staff1@primepass.test', 'a', '成功'], ['staff1@primepass.test', 'b', '拒否'], ['staff2@primepass.test', 'b', '成功'], ['staff2@primepass.test', 'a', '拒否'], ['staff3@primepass.test', 'a', '拒否']];
+const SEND = [['adex@primepass.test', 'hayama24', '成功'], ['qlea@primepass.test', 'hayama24', '拒否'], ['escon@primepass.test', 'hayama24', '拒否'], ['staff1@primepass.test', 'hayama24', '成功'], ['staff1@primepass.test', 'meguro62', '拒否'], ['staff2@primepass.test', 'meguro62', '成功'], ['staff2@primepass.test', 'hayama24', '拒否'], ['staff3@primepass.test', 'hayama24', '拒否']];
 for (const [email, p, ex] of SEND) {
   const tok = await signIn(email);
   const got = await callFn(tok, 'sendNotice', { property: p, title: `[自動テスト] ${email}`, body: 'verify' });
@@ -70,7 +70,7 @@ for (const [email, p, ex] of SEND) {
 
 console.log('\n■ お客様の登録〜ログイン（一時番号）');
 const email = `verify${Date.now()}@example.com`;
-const ir = await fetch(`${FN}/intake`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://fuupapayang.github.io' }, body: JSON.stringify({ name: '自動 テスト', email, phone: '090-0000-0000', property: 'b', formType: 'entry', consent: true }) });
+const ir = await fetch(`${FN}/intake`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://fuupapayang.github.io' }, body: JSON.stringify({ name: '自動 テスト', email, phone: '090-0000-0000', property: 'meguro62', formType: 'entry', consent: true }) });
 const { token } = await ir.json();
 const rd1 = await (await fetch(`${FN}/redeemToken`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: { token } }) })).json();
 const rd2 = await (await fetch(`${FN}/redeemToken`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: { token } }) })).json();
@@ -83,10 +83,10 @@ if (rd1.result) {
   const own = await (await fetch(`https://firestore.googleapis.com/v1/projects/${P}/databases/(default)/documents:runQuery`, { method: 'POST', headers: { Authorization: `Bearer ${mtok}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'contacts' }], where: { fieldFilter: { field: { fieldPath: 'cid' }, op: 'EQUAL', value: { stringValue: JSON.parse(Buffer.from(mtok.split('.')[1], 'base64url')).user_id } } } } }) })).json();
   const mine = own.filter((x) => x.document).length;
   console.log('お客様が、自分の登録情報を読む:', mine === 1 ? '成功（1件）' : `NG(${mine})`); if (mine !== 1) bad++;
-  const other = await canRead(mtok, 'contacts', 'a');
+  const other = await canRead(mtok, 'contacts', 'hayama24');
   console.log('お客様が、他人の個人情報を読む:', other === 'X' ? '拒否（正しい）' : 'NG（読めてしまう）'); if (other !== 'X') bad++;
-  console.log('お客様が、通知を配信する:', await callFn(mtok, 'sendNotice', { property: 'b', title: 'x', body: 'y' }));
-  console.log('お客様の問い合わせ送信:', await callFn(mtok, 'submitInquiry', { properties: ['b'], kind: 'inquiry', message: '自動テスト', contactMethod: 'mail' }));
+  console.log('お客様が、通知を配信する:', await callFn(mtok, 'sendNotice', { property: 'meguro62', title: 'x', body: 'y' }));
+  console.log('お客様の問い合わせ送信:', await callFn(mtok, 'submitInquiry', { properties: ['meguro62'], kind: 'inquiry', message: '自動テスト', contactMethod: 'mail' }));
   console.log('行動ログの記録:', await callFn(mtok, 'logEvent', { type: 'open' }));
 }
 // 後片付け: 自動テストが作ったお知らせ・登録者を、削除する（best effort。gcloud にログイン済みであること）

@@ -39,9 +39,9 @@ const ACCOUNTS = [
   { email: 'adex@primepass.test', name: 'ADEX（テスト）', claims: { role: 'adex' }, label: 'ADEX' },
   { email: 'qlea@primepass.test', name: 'QLEA（テスト）', claims: { role: 'qlea' }, label: 'QLEA' },
   { email: 'escon@primepass.test', name: 'ES CON本社（テスト）', claims: { role: 'escon' }, label: 'ES CON本社' },
-  { email: 'staff1@primepass.test', name: '物件担当者1（物件A）', claims: { role: 'staff', properties: ['a'] }, label: '物件担当者1（物件A）' },
-  { email: 'staff2@primepass.test', name: '物件担当者2（物件B）', claims: { role: 'staff', properties: ['b'] }, label: '物件担当者2（物件B）' },
-  { email: 'staff3@primepass.test', name: '物件担当者3（物件C）', claims: { role: 'staff', properties: ['c'] }, label: '物件担当者3（物件C）' },
+  { email: 'staff1@primepass.test', name: '物件担当者1（グラン レ・ジェイド葉山）', claims: { role: 'staff', properties: ['hayama24'] }, label: '物件担当者1（グラン レ・ジェイド葉山）' },
+  { email: 'staff2@primepass.test', name: '物件担当者2（レ・ジェイド目黒）', claims: { role: 'staff', properties: ['meguro62'] }, label: '物件担当者2（レ・ジェイド目黒）' },
+  { email: 'staff3@primepass.test', name: '物件担当者3（レ・ジェイド大阪梅田）', claims: { role: 'staff', properties: ['doyama227'] }, label: '物件担当者3（レ・ジェイド大阪梅田）' },
 ];
 const AUTH = `https://identitytoolkit.googleapis.com/v1/projects/${P}`;
 for (const a of ACCOUNTS) {
@@ -70,19 +70,39 @@ function toValue(v) {
   if (Array.isArray(v)) return { arrayValue: { values: v.map(toValue) } };
   return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, toValue(x)])) } };
 }
+
+/* ---- 以前のテストデータを消す（テスト環境のみ。config は消さない） ---- */
+async function wipe(col) {
+  let n = 0;
+  for (;;) {
+    const r = await api('GET', `https://firestore.googleapis.com/v1/${DOC}/${col}?pageSize=300&mask.fieldPaths=_`);
+    const docs = r.documents || [];
+    if (!docs.length) break;
+    for (let i = 0; i < docs.length; i += 300) await api('POST', `https://firestore.googleapis.com/v1/${DOC}:commit`, { writes: docs.slice(i, i + 300).map((d) => ({ delete: d.name })) });
+    n += docs.length;
+  }
+  return n;
+}
+for (const c of ['properties', 'memberships', 'contacts', 'notices', 'events', 'inquiries', 'intakeIndex', 'tokens', 'pushTokens', 'staff']) await wipe(c);
+
 const writes = [];
 const put = (path, data) => writes.push({ update: { name: `${DOC}/${path}`, fields: Object.fromEntries(Object.entries(data).map(([k, x]) => [k, toValue(x)])) } });
 const daysAgo = (d, h = 10) => new Date(Date.now() - d * 86400000 - (24 - h) * 3600000 * 0);
 
 const PROPS = {
-  a: { name: 'レジェイド○○（仮）', area: '東京都 港区', kind: '新築' },
-  b: { name: '△△タワー（仮）', area: '東京都 渋谷区', kind: '新築' },
-  c: { name: '□□ヒルズ（仮）', area: '神奈川県 箱根町', kind: '新築' },
+  'hayama24': { name: 'グラン レ・ジェイド葉山', region: '首都圏', area: '神奈川県 葉山町', kind: '新築' },
+  'meguro62': { name: 'レ・ジェイド目黒', region: '首都圏', area: '東京都 目黒区', kind: '新築' },
+  'doyama227': { name: 'レ・ジェイド大阪梅田', region: '西日本', area: '大阪府 大阪市', kind: '新築' },
+  'naha-asato83': { name: 'レ・ジェイド那覇安里駅前', region: '九州・沖縄', area: '沖縄県 那覇市', kind: '新築' },
+  'fvillage508': { name: 'エスコンフィールドタワー', region: '北海道', area: '北海道 北広島市', kind: '新築' },
+  'ost-garden': { name: 'オストガーデン軽井沢', region: '中部', area: '長野県 軽井沢町', kind: '新築' },
+  'alia-hawaii': { name: 'ハワイ Alia / Kuilei', region: '海外', area: 'ハワイ', kind: '新築' },
 };
 for (const [id, p] of Object.entries(PROPS)) put(`properties/${id}`, p);
 
 const NAMES = ['山田 太郎', '佐藤 花子', '鈴木 一郎', '高橋 美咲', '田中 健', '伊藤 彩', '渡辺 誠', '中村 玲子', '小林 拓海', '加藤 由美', '吉田 大輔', '山本 優子'];
-const MEMBER_PROPS = [['a', 'b'], ['a'], ['a'], ['b'], ['b', 'c'], ['c'], ['a', 'c'], ['b'], ['c'], ['a'], ['b'], ['c']];
+const PH = 'hayama24'; const PM = 'meguro62'; const PD = 'doyama227'; const PN = 'naha-asato83'; const PF = 'fvillage508'; const PO = 'ost-garden';
+const MEMBER_PROPS = [[PH, PM], [PH], [PH], [PM], [PM, PD], [PD], [PH, PD], [PM], [PD], [PH, PO], [PM, PN], [PD, PF]];
 NAMES.forEach((name, i) => {
   const n = String(i + 1).padStart(2, '0');
   const cid = `demo_c${n}`;
@@ -96,12 +116,14 @@ NAMES.forEach((name, i) => {
 });
 
 const NOTICES = [
-  ['a', '限定間取りを追加しました', '会員限定の間取り図と、CGを公開しました。', 3],
-  ['a', 'モデルルームの来場予約を受付中です', '12月のご予約を承っております。', 12],
-  ['b', '新築タワー 第2期 先行案内のお知らせ', '会員のみなさまへ、先行案内を開始します。', 5],
-  ['b', '販売状況を更新しました', '最新の販売状況を、ご確認いただけます。', 9],
-  ['c', 'ヒルズ 現地見学会のご案内', '12月の週末に、現地見学会を開催します。', 6],
-  ['c', '限定ムービーを公開しました', '会員限定のムービーをご覧いただけます。', 14],
+  [PH, '会員限定の間取りを追加しました', '会員のみなさまへ、限定の間取りと、CGを公開しました。（テスト用の文面です）', 3],
+  [PH, 'モデルルームの来場予約を受付中です', '12月のご予約を承っております。（テスト用の文面です）', 12],
+  [PM, '新築 第2期 先行案内のお知らせ', '会員のみなさまへ、先行案内を開始します。（テスト用の文面です）', 5],
+  [PM, '販売状況を更新しました', '最新の販売状況を、ご確認いただけます。（テスト用の文面です）', 9],
+  [PD, '現地見学会のご案内', '12月の週末に、現地見学会を開催します。（テスト用の文面です）', 6],
+  [PD, '限定ムービーを公開しました', '会員限定のムービーを、ご覧いただけます。（テスト用の文面です）', 14],
+  [PO, 'クラフトマンの映像を公開しました', '軽井沢のクラフトマンたちの映像を、ご覧いただけます。（テスト用の文面です）', 7],
+  [PN, '最新の販売状況のお知らせ', '販売状況を更新しました。（テスト用の文面です）', 10],
 ];
 NOTICES.forEach(([p, title, body, d], i) => put(`notices/demo_n${i + 1}`, { property: p, title, body, createdBy: 'seed', createdByRole: 'seed', publishedAt: daysAgo(d) }));
 
@@ -114,11 +136,11 @@ for (let i = 1; i <= 12; i++) {
   });
 }
 const INQ = [
-  ['demo_c01', 'a', 'inquiry', '間取りと価格帯について、相談したいです。', 'tel', 1],
-  ['demo_c02', 'a', 'visit', '', 'mail', 2],
-  ['demo_c04', 'b', 'inquiry', '先行案内の日程を教えてください。', 'mail', 1],
-  ['demo_c05', 'c', 'inquiry', '現地見学会に参加したいです。', 'tel', 3],
-  ['demo_c06', 'c', 'visit', '', 'tel', 4],
+  ['demo_c01', PH, 'inquiry', '間取りと価格帯について、相談したいです。', 'tel', 1],
+  ['demo_c02', PH, 'visit', '', 'mail', 2],
+  ['demo_c04', PM, 'inquiry', '先行案内の日程を教えてください。', 'mail', 1],
+  ['demo_c05', PD, 'inquiry', '現地見学会に参加したいです。', 'tel', 3],
+  ['demo_c06', PD, 'visit', '', 'tel', 4],
 ];
 INQ.forEach(([cid, p, kind, message, cm, d], i) => put(`inquiries/demo_q${i + 1}`, { cid, property: p, kind, message, contactMethod: cm, timeSlot: kind === 'visit' ? '11:30' : '', visitDate: kind === 'visit' ? '2026-12-12' : '', guests: 2, status: 'new', createdAt: daysAgo(d) }));
 

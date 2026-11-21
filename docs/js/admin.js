@@ -3,10 +3,10 @@ import {
   auth, db, authReady, call, signInWithEmailAndPassword, signOut, onAuthStateChanged,
   collection, query, where, getDocs, $, $$, esc, fmtDate,
 } from './fb.js';
-import { PROPERTY_NAMES, ENV_LABEL } from './config.js';
+import { PROPERTY_NAMES, PROPERTY_IDS, ENV_LABEL } from './config.js';
 
 const root = $('#root');
-const PROPS = ['a', 'b', 'c'];
+const PROPS = PROPERTY_IDS;
 const ROLE_LABEL = { adex: 'ADEX', qlea: 'QLEA', escon: 'ES CON本社', staff: '物件担当者' };
 const S = { claims: null, user: null, tab: 'overview', data: {} };
 

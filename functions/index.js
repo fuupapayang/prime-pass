@@ -28,7 +28,7 @@ const ALLOWED_ORIGINS = [
   'http://127.0.0.1:8080',
   'http://localhost:5000',
 ];
-const PROPERTIES = ['a', 'b', 'c'];
+const PROPERTIES = ['hayama24', 'meguro62', 'doyama227', 'naha-asato83', 'fvillage508', 'ost-garden', 'alia-hawaii'];
 const TOKEN_TTL_SEC = 15 * 60;
 
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -50,7 +50,7 @@ exports.intake = onRequest({ cors: ALLOWED_ORIGINS }, async (req, res) => {
   const name = clean(b.name, 60);
   const email = clean(b.email, 120).toLowerCase();
   const phone = clean(b.phone, 30);
-  const property = clean(b.property, 10);
+  const property = clean(b.property, 20);
   const formType = clean(b.formType || 'entry', 20);
   if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !phone || !PROPERTIES.includes(property) || b.consent !== true) {
     return res.status(400).json({ error: 'invalid_input' });
@@ -129,7 +129,7 @@ exports.savePushToken = onCall(async (req) => {
 exports.sendNotice = onCall(async (req) => {
   const auth = requireAuth(req);
   const role = auth.token.role;
-  const property = clean(req.data && req.data.property, 10);
+  const property = clean(req.data && req.data.property, 20);
   const title = clean(req.data && req.data.title, 80);
   const body = clean(req.data && req.data.body, 300);
   if (!PROPERTIES.includes(property) || !title || !body) throw new HttpsError('invalid-argument', '物件・タイトル・本文が必要です');

@@ -10,6 +10,11 @@ service cloud.firestore {
     function isRole(r) { return signedIn() && role() == r; }
     function isStaffOf(p) { return isRole('staff') && p in request.auth.token.properties; }
 
+    // 設定（画像・動画の場所の一覧）。ログイン済みなら読める。書き込みは、サーバーのみ
+    match /config/{id} {
+      allow read: if signedIn();
+    }
+
     // 物件の基本情報は、ログイン済みなら誰でも読める（公開情報）
     match /properties/{p} {
       allow read: if signedIn();

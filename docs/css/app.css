@@ -146,3 +146,46 @@ table.t td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-
 .pill-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 0; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 @media (max-width: 560px) { .admin { padding: 0 14px 60px; } table.t { font-size: 12px; } }
+
+/* ---------- 実素材を使った画面（ES CON プライムメンバーシップ） ---------- */
+.hero-img { position: relative; height: 470px; margin: 4px 0 0; background: #101512 center/cover no-repeat; color: var(--white); display: flex; flex-direction: column; justify-content: flex-end; padding: 0 22px 26px; overflow: hidden; }
+.hero-img::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10,16,13,0) 45%, rgba(10,16,13,.82) 100%); }
+.hero-img > * { position: relative; z-index: 1; }
+.hero-img .k { font-size: 10px; letter-spacing: .22em; color: #e2cf9f; margin-bottom: 8px; }
+.hero-img .name { font-family: var(--serif-jp); font-size: 27px; font-weight: 500; line-height: 1.4; }
+.hero-img .sub { font-size: 12px; color: rgba(255,255,255,.82); margin-top: 8px; }
+.slogan { padding: 30px 22px 6px; }
+.slogan .jp { font-family: var(--serif-jp); font-size: 19px; line-height: 1.9; color: var(--green); margin: 0 0 10px; }
+.slogan .en { font-family: var(--serif-en); font-size: 15px; font-style: italic; color: var(--gold); margin: 0; }
+.hscroll { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 22px 8px; margin: 0 -22px; scrollbar-width: none; }
+.hscroll::-webkit-scrollbar { display: none; }
+.hscroll > * { scroll-snap-align: start; flex: none; }
+.tile { width: 220px; text-decoration: none; color: inherit; display: block; }
+.tile .im { width: 220px; height: 220px; background: #cfc8b8 center/cover no-repeat; position: relative; }
+.tile .im.tall { height: 270px; }
+.tile .rg { font-size: 10px; letter-spacing: .12em; color: var(--gold); margin: 10px 0 2px; }
+.tile .nm { font-family: var(--serif-jp); font-size: 15px; line-height: 1.5; color: var(--green); }
+.tile .ar { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.tile .nw { position: absolute; top: 8px; left: 8px; }
+.craft-tile { width: 250px; background: var(--white); border: 1px solid var(--line); text-decoration: none; color: inherit; display: block; }
+.craft-tile .im { height: 168px; background: #cfc8b8 center/cover no-repeat; }
+.craft-tile .bd { padding: 12px 14px 14px; }
+.craft-tile .en { font-family: var(--serif-en); letter-spacing: .14em; color: var(--gold); font-size: 12px; }
+.craft-tile .jp { font-family: var(--serif-jp); font-size: 18px; color: var(--green); margin: 2px 0 4px; }
+.craft-tile .tg { font-size: 12px; color: var(--muted); }
+.vid { width: 100%; background: #000; display: block; aspect-ratio: 9/16; max-height: 70vh; object-fit: cover; }
+.person { display: flex; align-items: center; gap: 12px; margin: 14px 0; }
+.person .ph { width: 96px; height: 96px; background: #cfc8b8 center/cover no-repeat; flex: none; }
+.seg { display: flex; border: 1px solid var(--line); background: var(--white); margin: 8px 0 18px; }
+.seg button { flex: 1; border: 0; background: none; padding: 11px 0; font-family: inherit; font-size: 13px; color: var(--muted); cursor: pointer; }
+.seg button.on { background: var(--green); color: #fff; }
+.prop .art { background-size: cover; background-position: center; height: 230px; }
+.prop .art .rgn { position: absolute; left: 12px; bottom: 12px; font-size: 10px; letter-spacing: .18em; background: rgba(10,16,13,.55); padding: 3px 8px; }
+.linkrow { display: flex; gap: 10px; margin-top: 8px; }
+.linkrow a { font-size: 12px; color: var(--green); }
+.gal { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.gal .im { aspect-ratio: 1; background: #cfc8b8 center/cover no-repeat; }
+.gal .cap { font-size: 10px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+.sec-title { display: flex; justify-content: space-between; align-items: baseline; margin: 30px 0 12px; }
+.sec-title .en { font-family: var(--serif-en); font-size: 26px; color: var(--green); line-height: 1.1; }
+.sec-title .jp { font-size: 11px; color: var(--muted); }

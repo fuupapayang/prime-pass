@@ -1,0 +1,13 @@
+rules_version = '2';
+// 画像・動画は、ログインした方だけが読める。書き込みはサーバー（管理者の作業）のみ
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /site/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -20,7 +20,7 @@
         <div class="field"><label>メールアドレス</label><input class="input" id="email" type="email" autocomplete="email" placeholder="taro.yamada@example.com" required></div>
         <div class="field"><label>電話番号</label><input class="input" id="phone" type="tel" autocomplete="tel" placeholder="090-0000-0000" required></div>
         <div class="field"><label>ご関心のあるプロジェクト</label>
-          <select class="input" id="property"><option value="a">レジェイド○○（仮）</option><option value="b">△△タワー（仮）</option><option value="c">□□ヒルズ（仮）</option></select></div>
+          <select class="input" id="property"></select></div>
         <div class="field"><label>フォームの種類</label>
           <select class="input" id="formType"><option value="entry">会員登録</option><option value="document">資料請求</option><option value="visit">来場予約</option></select></div>
         <label class="small" style="display:flex;gap:10px;align-items:flex-start;margin:6px 0 16px"><input type="checkbox" id="consent" style="margin-top:5px"><span>個人情報の取り扱いに同意します。ご登録のお名前・メール・電話番号は、アプリ「PRIME PASS」へ引き継がれ、情報のご案内・通知に利用されます。</span></label>
@@ -38,7 +38,8 @@
     </div>
   </div>
   <script type="module">
-    import { INTAKE_URL } from '../js/config.js';
+    import { INTAKE_URL, PROPERTIES } from '../js/config.js';
+    document.querySelector('#property').innerHTML = PROPERTIES.map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
     const $ = (s) => document.querySelector(s);
     const rnd = () => String(Math.floor(1000 + Math.random() * 9000));
     $('#fill').addEventListener('click', () => {
