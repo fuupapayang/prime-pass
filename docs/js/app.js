@@ -178,7 +178,7 @@ function viewInstall() {
       <div class="stack" style="margin-top:14px"><button class="btn" data-go="#/push">ご登録を進める</button><p class="xs muted center" style="margin:0">スマートフォンをお持ちでない場合は、ご使用のPCで<a href="#/push" style="color:var(--green,#193a2b);text-decoration:underline;font-weight:600">このままご登録画面にお進みください</a>。</p><p class="xs center" style="margin:8px 0 0"><a href="#" id="copyBtn" style="color:var(--muted);text-decoration:underline">スマートフォンに送るURLをコピー（15分有効）</a></p></div></div>`;
   }
   app.innerHTML = html;
-  if (isIOS && !inApp && S.user) prepareInstallManifest();
+  if (isIOS && !inApp && S.user) prepareInstallManifest().then(applyInstallUrl);
   const cb = $('#copyBtn'); if (cb) cb.addEventListener('click', (e) => { e.preventDefault(); copyUrl(); });
   const ib = $('#installBtn'); if (ib) ib.addEventListener('click', async () => { if (S.deferred) { S.deferred.prompt(); const c = await S.deferred.userChoice.catch(() => ({})); S.deferred = null; location.hash = c.outcome === 'accepted' ? '#/ready' : '#/push'; } else toast('右上の「︙」メニューから「ホーム画面に追加」を選んでください'); });
   S.qrUrl = null;
@@ -198,14 +198,16 @@ function drawQr() {
 }
 
 // iPhone：ホーム画面に追加したアプリは、Safariとログインを共有しない。追加用の設定ファイルの開始URLに、使い捨ての番号を入れておき、初回の起動で、自動でログインする
+// iPhoneは、ホーム画面に追加するとき、いま開いているURLを保存する。使い捨ての番号を、URLに付けておく（?i=）
+function applyInstallUrl() { if (S.installTok) history.replaceState(null, '', location.pathname + '?i=' + encodeURIComponent(S.installTok) + location.hash); }
 async function prepareInstallManifest() {
   if (S.manifestAt && Date.now() - S.manifestAt < 30 * 60 * 1000) return;
   try {
     const r = await call('mintHandoff')({ kind: 'install' });
     const base = location.origin + location.pathname;
-    const m = { name: 'PRIME PASS', short_name: 'PRIME PASS', description: '会員限定の、物件情報アプリ（テスト環境）', start_url: base + '?t=' + encodeURIComponent(r.data.token), scope: base, display: 'standalone', background_color: '#f4ede1', theme_color: '#193a2b', lang: 'ja',
+    const m = { name: 'PRIME PASS', short_name: 'PRIME PASS', description: '会員限定の、物件情報アプリ（テスト環境）', start_url: base + '?i=' + encodeURIComponent(r.data.token), scope: base, display: 'standalone', background_color: '#f4ede1', theme_color: '#193a2b', lang: 'ja',
       icons: [{ src: base + 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' }, { src: base + 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }] };
-    S.manifestAt = Date.now();
+    S.manifestAt = Date.now(); S.installTok = r.data.token;
     const old = document.querySelector('link[rel="manifest"]'); if (old) old.remove();
     const l = document.createElement('link'); l.rel = 'manifest'; l.href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(m)); document.head.appendChild(l);
   } catch { /* 作れない場合は、通常の設定ファイルのまま */ }
@@ -213,17 +215,39 @@ async function prepareInstallManifest() {
 
 function viewPush() {
   setTabs(null);
-  const granted = 'Notification' in window && Notification.permission === 'granted';
+  const blocked = isIOS && !isStandalone();
+  const canPush = 'Notification' in window && 'serviceWorker' in navigator && !blocked;
+  const alreadyPush = canPush && Notification.permission === 'granted';
+  const mailNow = S.memberships.length ? S.memberships.every((m) => m.emailOptIn !== false) : true;
   app.innerHTML = `${topbar(false)}
   <div class="section" style="padding-top:20px"><p class="eyebrow">Members exclusive</p><h1 class="display">Stay in the Know</h1>
-    <div style="color:var(--gold);margin:22px 0 6px;text-align:center"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M6 17V11a6 6 0 1 1 12 0v6l1.5 2h-15zM10 21h4"/></svg></div>
-    <h2 class="display-jp" style="margin-bottom:14px;text-align:center;font-size:26px;line-height:1.7">新着情報を通知でお知らせします</h2>
+    <h2 class="display-jp" style="margin:16px 0 8px;font-size:24px;line-height:1.7">${S.contact && S.contact.name ? esc(S.contact.name) + ' 様、' : ''}ご登録が完了しました</h2>
+    <p class="muted small">新着情報を、どのようにお受け取りになりますか？ご希望のものを選んでください。</p>
     <div class="benefit"><span class="ic">${ICON.building}</span><div><b>新しい物件・限定情報</b><span>公開されたばかりの情報をお知らせ</span></div></div>
     <div class="benefit"><span class="ic">${ICON.tag}</span><div><b>販売状況の更新</b><span>最新の状況をお伝えします</span></div></div>
     <div class="benefit"><span class="ic">${ICON.mail}</span><div><b>担当者からのご案内</b><span>お客様宛の資料やご連絡</span></div></div>
-    <hr class="hr"><p class="xs muted">通知はいつでも設定から変更できます。iPhoneでは、ホーム画面から開いたときに受け取れます。</p>
-    <div id="pushMsg">${isIOS && !isStandalone() ? '<div class="banner warn" style="margin-top:14px"><b>通知は、ホーム画面に追加したアプリで、オンにできます。</b><br>先に、ホーム画面への追加を済ませてください。<br><a href="#/install" style="color:inherit;text-decoration:underline">追加の手順を見る</a></div>' : ''}</div><div class="stack" style="margin-top:22px"><button class="btn" id="pushOk" ${isIOS && !isStandalone() ? 'disabled' : ''}>${granted ? 'ホームへ進む' : '通知を受け取る'}</button>${granted ? '' : '<button class="btn ghost" data-go="#/home">あとで</button>'}</div></div>`;
-  $('#pushOk').addEventListener('click', async () => { if (granted) { location.hash = '#/home'; return; } const b = $('#pushOk'); b.disabled = true; b.textContent = '設定しています…'; const ok = await enablePush(true); if (ok) { location.hash = '#/home'; } else { b.disabled = false; b.textContent = '通知を受け取る'; } });
+    <h2 class="h2s" style="margin-top:22px">お知らせの受け取り方</h2>
+    <div class="setrow"><div class="tx">プッシュ通知<small>${blocked ? 'ホーム画面に追加したアプリで、選べます' : canPush ? 'この端末に、すぐにお知らせします' : 'このブラウザでは、ご利用いただけません'}</small></div><button class="switch ${canPush ? 'on' : ''}" id="swPush" aria-label="プッシュ通知" ${canPush ? '' : 'disabled style="opacity:.4"'}></button></div>
+    <div class="setrow last"><div class="tx">メールでの案内<small>ご登録のメールアドレスに、ご案内をお送りします</small></div><button class="switch ${mailNow ? 'on' : ''}" id="swMail" aria-label="メールでの案内"></button></div>
+    <p class="xs muted" style="margin-top:12px">通知の設定は、あとから、いつでも変更できます。<b>「お知らせ」画面の右上の歯車アイコン（設定）</b>から切り替えられます。</p>
+    <div id="pushMsg">${blocked ? '<div class="banner warn" style="margin-top:14px"><b>通知は、ホーム画面に追加したアプリで、オンにできます。</b><br>先に、ホーム画面への追加を済ませてください。<br><a href="#/install" style="color:inherit;text-decoration:underline">追加の手順を見る</a></div>' : ''}</div>
+    <div class="stack" style="margin-top:22px"><button class="btn" id="pushOk">この設定ではじめる</button></div></div>`;
+  const tog = (id) => { const el = $(id); el.addEventListener('click', () => { if (!el.disabled) el.classList.toggle('on'); }); };
+  tog('#swPush'); tog('#swMail');
+  let failed = false;
+  $('#pushOk').addEventListener('click', async () => {
+    const b = $('#pushOk');
+    if (failed) { location.hash = '#/home'; return; }
+    b.disabled = true; b.textContent = '設定しています…';
+    const wantPush = canPush && $('#swPush').classList.contains('on');
+    const wantMail = $('#swMail').classList.contains('on');
+    try { await call('savePrefs')({ email: wantMail }); S.memberships.forEach((m) => { m.emailOptIn = wantMail; }); } catch { /* メールの設定は、設定画面から、もう一度できる */ }
+    if (wantPush && !alreadyPush) {
+      const ok = await enablePush(true);
+      if (!ok) { failed = true; b.disabled = false; b.textContent = 'このまま進む'; return; }
+    } else if (alreadyPush && !S.pushSaved) { await enablePush(true); }
+    location.hash = '#/home';
+  });
 }
 
 function viewReady() {
@@ -485,7 +509,7 @@ function viewSettings() {
     <p class="xs muted" style="margin-top:8px">変更は、担当者へのご連絡で承ります。</p>
     <h2 class="h2s" style="margin-top:26px">通知</h2>
     <div class="setrow"><div class="tx">プッシュ通知<small>新着・販売状況・ご案内</small></div><button class="switch ${on ? 'on' : ''}" id="pushSw" aria-label="プッシュ通知"></button></div>
-    <div class="setrow last"><div class="tx">メールでの案内<small>ご案内メールを受け取る（準備中）</small></div><button class="switch" id="mailSw" aria-label="メールでの案内" style="opacity:.5"></button></div>
+    <div class="setrow last"><div class="tx">メールでの案内<small>ご案内メールを受け取る</small></div><button class="switch ${S.memberships.length && S.memberships.every((m) => m.emailOptIn !== false) ? 'on' : ''}" id="mailSw" aria-label="メールでの案内"></button></div>
     <div id="pushBox2"></div>
     <h2 class="h2s" style="margin-top:26px">その他</h2>
     <div class="setrow" data-todo="利用規約"><span style="color:var(--muted)">${ICON.doc}</span><div class="tx">利用規約</div><span class="muted">${ICON.chev}</span></div>
@@ -493,7 +517,7 @@ function viewSettings() {
     <div class="setrow last" id="delReq"><span style="color:var(--danger)">${ICON.trash}</span><div class="tx" style="color:var(--danger)">登録情報の削除を依頼する</div><span class="muted">${ICON.chev}</span></div>
     <div id="setRes" style="margin-top:12px"></div>
     ${disclaimer()}</div>`;
-  $('#mailSw').addEventListener('click', () => toast('メールでの案内は、準備中です'));
+  $('#mailSw').addEventListener('click', async () => { const sw = $('#mailSw'); const want = !sw.classList.contains('on'); sw.classList.toggle('on', want); try { await call('savePrefs')({ email: want }); S.memberships.forEach((m) => { m.emailOptIn = want; }); toast(want ? 'メールでの案内を、オンにしました' : 'メールでの案内を、オフにしました'); } catch (e) { sw.classList.toggle('on', !want); toast('変更できませんでした：' + e.message); } });
   $('#pushSw').addEventListener('click', async () => {
     if (!supported || (isIOS && !isStandalone())) { $('#pushBox2').innerHTML = `<div class="banner warn">${isIOS ? 'iPhoneでは、ホーム画面に追加したあとに、オンにできます。' : 'このブラウザでは、通知を利用できません。'}</div>`; return; }
     if (Notification.permission === 'denied') { $('#pushBox2').innerHTML = '<div class="banner warn">通知がブロックされています。端末の設定から、許可してください。</div>'; return; }
@@ -638,8 +662,11 @@ window.addEventListener('hashchange', route);
 async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./firebase-messaging-sw.js').catch(() => {});
   const u0 = await authReady;
-  const t = new URLSearchParams(location.search).get('t');
-  if (t && u0 && isStandalone()) { history.replaceState(null, '', location.pathname + location.hash); } // ホーム画面アプリで、すでにログイン済み：開始URLの番号は使わない
+  const qs = new URLSearchParams(location.search);
+  const isInstallTok = !qs.get('t') && !!qs.get('i');
+  const t = qs.get('t') || qs.get('i');
+  if (t && u0 && isInstallTok) { if (isStandalone()) history.replaceState(null, '', location.pathname + location.hash); } // 追加用の番号：すでにログイン済みなら使わない（Safariでは、URLに残す）
+  else if (t && u0 && isStandalone()) { history.replaceState(null, '', location.pathname + location.hash); }
   else if (t) {
     app.innerHTML = '<div class="section center" style="padding-top:30vh"><p class="eyebrow">PRIME PASS</p><div class="pp-spin" aria-hidden="true"></div><p class="h2">ご登録を確認しています…</p><p class="xs muted" style="margin-top:10px">数秒かかります。画面を閉じずに、そのままお待ちください。</p></div>';
     try {
@@ -660,7 +687,7 @@ async function boot() {
     } catch (e) { toast('データを読み込めませんでした：' + e.message); }
   }
   if (S.user && !location.hash) location.hash = '#/home';
-  try { if (S.user && isStandalone() && !localStorage.getItem('pp.ready')) { localStorage.setItem('pp.ready', '1'); location.hash = '#/ready'; } } catch { /* noop */ }
+  try { if (S.user && isStandalone() && !localStorage.getItem('pp.ready')) { localStorage.setItem('pp.ready', '1'); location.hash = '#/push'; } } catch { /* noop */ }
   route();
 }
 boot();

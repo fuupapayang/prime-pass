@@ -161,6 +161,18 @@ exports.mintHandoff = onCall(async (req) => {
   return { token, expiresInSec: ttl };
 });
 
+// お客様の通知の希望（メールでの案内）。本人の登録すべてに反映する
+exports.savePrefs = onCall(async (req) => {
+  const auth = requireAuth(req);
+  if (auth.token.role !== 'member') throw new HttpsError('permission-denied', 'お客様のみ');
+  const email = !!(req.data && req.data.email);
+  const ms = await db.collection('memberships').where('cid', '==', auth.uid).get();
+  const batch = db.batch();
+  ms.forEach((d) => batch.update(d.ref, { emailOptIn: email, prefsAt: FieldValue.serverTimestamp() }));
+  await batch.commit();
+  return { ok: true, email };
+});
+
 /* ---------- 3. プッシュ通知の宛先 ---------- */
 exports.savePushToken = onCall(async (req) => {
   const auth = requireAuth(req);
