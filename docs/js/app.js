@@ -347,7 +347,7 @@ function viewPrime() {
   setTabs('#/collection'); S.curProp = null;
   app.innerHTML = `${subHeader('エスコン プライム', '#/home')}
   <div class="pagenote">${ICON.globe.replace('width="20" height="20"', 'width="12" height="12"')} 掲載内容は、ES CON プライムメンバーシップ サイトに準じています（テスト用の表示）</div>
-  <div class="frame-hero" id="primeHero" style="height:420px;${A('hero') ? `background-image:url('${esc(A('hero'))}')` : ''}"><div class="hero-yt" id="heroYt"></div><div class="k">ESCON PRIME</div><div class="name">暮らしの、その先へ。</div></div>
+  <div class="frame-hero" id="primeHero" style="height:420px;${A('hero') ? `background-image:url('${esc(A('hero'))}')` : ''}"><div class="hero-yt"><div id="heroYt"></div></div><div class="k">ESCON PRIME</div><div class="name">暮らしの、その先へ。</div></div>
   <div class="slogan"><p class="jp">この国の技術を未来へ継承し、<br>次世代の暮らしに新たな価値を。</p><p class="en">Heritage and the spirit of Craftsmanship</p></div>
   <div class="section">
     <p class="eyebrow" style="margin-top:6px">BRAND STORY</p>
