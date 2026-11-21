@@ -147,6 +147,20 @@ exports.redeemToken = onCall(async (req) => {
   return { customToken };
 });
 
+/* ---------- 2b. 別の端末・ホーム画面アプリへ、ログインを引き継ぐ（使い捨ての番号） ---------- */
+// qr：パソコン→スマートフォン（15分） / install：ホーム画面に追加するアプリの開始URL用（60分）。どちらも1回だけ使える。個人情報は含まない
+exports.mintHandoff = onCall(async (req) => {
+  const auth = requireAuth(req);
+  if (auth.token.role !== 'member') throw new HttpsError('permission-denied', 'お客様のみ');
+  const kind = (req.data && req.data.kind) === 'install' ? 'install' : 'qr';
+  const ttl = kind === 'install' ? 60 * 60 : TOKEN_TTL_SEC;
+  const recent = await db.collection('tokens').where('cid', '==', auth.uid).where('used', '==', false).get();
+  if (recent.size > 30) throw new HttpsError('resource-exhausted', 'しばらくしてから、もう一度お試しください');
+  const token = crypto.randomBytes(24).toString('base64url');
+  await db.collection('tokens').doc(sha256(token)).set({ cid: auth.uid, kind, exp: Timestamp.fromMillis(Date.now() + ttl * 1000), used: false });
+  return { token, expiresInSec: ttl };
+});
+
 /* ---------- 3. プッシュ通知の宛先 ---------- */
 exports.savePushToken = onCall(async (req) => {
   const auth = requireAuth(req);

@@ -175,16 +175,29 @@ function viewInstall() {
       <div class="stack" style="margin-top:14px"><button class="btn" id="copyBtn">案内のURLをコピー</button><button class="btn ghost" data-go="#/push">このまま続ける</button></div></div>`;
   }
   app.innerHTML = html;
+  if (isIOS && !inApp && S.user) prepareInstallManifest();
   const cb = $('#copyBtn'); if (cb) cb.addEventListener('click', copyUrl);
   const ib = $('#installBtn'); if (ib) ib.addEventListener('click', async () => { if (S.deferred) { S.deferred.prompt(); const c = await S.deferred.userChoice.catch(() => ({})); S.deferred = null; location.hash = c.outcome === 'accepted' ? '#/ready' : '#/push'; } else toast('右上の「︙」メニューから「ホーム画面に追加」を選んでください'); });
   const qr = $('#qr');
   if (qr) {
     const sc = document.createElement('script');
     sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
-    sc.onload = () => { const q = window.qrcode(0, 'M'); q.addData(location.origin + location.pathname); q.make(); qr.innerHTML = q.createSvgTag(5); };
+    sc.onload = async () => { let u = location.origin + location.pathname; try { const r = await call('mintHandoff')({ kind: 'qr' }); u += '?t=' + encodeURIComponent(r.data.token); } catch { /* 番号が作れない場合は、URLのみ */ } const q = window.qrcode(0, 'M'); q.addData(u); q.make(); qr.innerHTML = q.createSvgTag(5) + '<div class="xs muted" style="margin-top:6px">このQRは、15分間・1回だけ使えます</div>'; };
     sc.onerror = () => { qr.textContent = location.origin + location.pathname; };
     document.head.appendChild(sc);
   }
+}
+
+// iPhone：ホーム画面に追加したアプリは、Safariとログインを共有しない。追加用の設定ファイルの開始URLに、使い捨ての番号を入れておき、初回の起動で、自動でログインする
+async function prepareInstallManifest() {
+  try {
+    const r = await call('mintHandoff')({ kind: 'install' });
+    const base = location.origin + location.pathname;
+    const m = { name: 'PRIME PASS', short_name: 'PRIME PASS', description: '会員限定の、物件情報アプリ（テスト環境）', start_url: base + '?t=' + encodeURIComponent(r.data.token), scope: base, display: 'standalone', background_color: '#f4ede1', theme_color: '#193a2b', lang: 'ja',
+      icons: [{ src: base + 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' }, { src: base + 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }] };
+    const old = document.querySelector('link[rel="manifest"]'); if (old) old.remove();
+    const l = document.createElement('link'); l.rel = 'manifest'; l.href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(m)); document.head.appendChild(l);
+  } catch { /* 作れない場合は、通常の設定ファイルのまま */ }
 }
 
 function viewPush() {
@@ -608,12 +621,13 @@ async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./firebase-messaging-sw.js').catch(() => {});
   const u0 = await authReady;
   const t = new URLSearchParams(location.search).get('t');
-  if (t) {
+  if (t && u0 && isStandalone()) { history.replaceState(null, '', location.pathname + location.hash); } // ホーム画面アプリで、すでにログイン済み：開始URLの番号は使わない
+  else if (t) {
     app.innerHTML = '<div class="section center" style="padding-top:36vh"><p class="eyebrow">PRIME PASS</p><p class="h2">ご登録を確認しています…</p></div>';
     try {
       const r = await call('redeemToken')({ token: t });
       await signInWithCustomToken(auth, r.data.customToken);
-      history.replaceState(null, '', location.pathname + '#/install'); // URLから一時番号を消す
+      history.replaceState(null, '', location.pathname + (isStandalone() ? '#/home' : '#/install')); // URLから一時番号を消す
     } catch (e) {
       app.innerHTML = `<div class="section" style="padding-top:20vh"><p class="eyebrow">PRIME PASS</p><h1 class="display-jp">ご登録の確認が、できませんでした</h1><div class="banner err" style="margin-top:16px">${esc(e.message)}</div><a class="btn" href="form/">登録フォームへ戻る</a></div>`;
       return;
