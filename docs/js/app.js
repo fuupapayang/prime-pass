@@ -78,7 +78,7 @@ function toast(msg) {
 }
 const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const ua = navigator.userAgent;
-const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOSは、Macと同じ表示になるため、タッチの有無でも判定
+const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1 && !/Android/.test(ua)); // iPadOSは、Macと同じ表示になるため、タッチの有無でも判定
 const isAndroid = /Android/.test(ua);
 const isTouchSmall = navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900;
 const isMobileUA = /Mobi|iPhone|iPad|iPod|Android/.test(ua) || (navigator.userAgentData && navigator.userAgentData.mobile === true) || isTouchSmall;
