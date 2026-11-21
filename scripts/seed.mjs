@@ -44,6 +44,7 @@ const ACCOUNTS = [
   { email: 'staff1@primepass.test', name: '物件担当者1（グラン レ・ジェイド葉山）', claims: { role: 'staff', properties: ['hayama24'] }, label: '物件担当者1（グラン レ・ジェイド葉山）' },
   { email: 'staff2@primepass.test', name: '物件担当者2（レ・ジェイド目黒）', claims: { role: 'staff', properties: ['meguro62'] }, label: '物件担当者2（レ・ジェイド目黒）' },
   { email: 'staff3@primepass.test', name: '物件担当者3（レ・ジェイド大阪梅田）', claims: { role: 'staff', properties: ['doyama227'] }, label: '物件担当者3（レ・ジェイド大阪梅田）' },
+  { email: 'staff4@primepass.test', name: 'プライム担当（エスコン プライム）', claims: { role: 'staff', properties: ['prime'] }, label: 'プライム担当（エスコン プライム）' },
 ];
 const AUTH = `https://identitytoolkit.googleapis.com/v1/projects/${P}`;
 for (const a of ACCOUNTS) {
