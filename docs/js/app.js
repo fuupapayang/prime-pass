@@ -138,7 +138,7 @@ function viewWelcome() {
   </div>`;
 }
 
-const copyUrl = async () => { try { await navigator.clipboard.writeText(location.origin + location.pathname); toast('URLをコピーしました'); } catch { toast('コピーできませんでした'); } };
+const copyUrl = async () => { try { await navigator.clipboard.writeText(S.qrUrl || (location.origin + location.pathname)); toast('URLをコピーしました'); } catch { toast('コピーできませんでした'); } };
 const stepLine = (n, t, sm, ic) => `<div class="stepline"><span class="no">${n}</span><div class="tx">${t}${sm ? `<small>${sm}</small>` : ''}</div><span class="ic">${ic}</span></div>`;
 
 function viewInstall() {
@@ -173,17 +173,17 @@ function viewInstall() {
       <div class="center" style="margin:20px 0"><div class="qrbox" id="qr">読み込み中…</div><div class="xs muted" style="margin-top:8px">カメラで読み取ってください</div></div>
       <div class="banner warn" style="text-align:center;margin:6px 0 10px"><b>15分以内に登録してください。</b><br><span class="xs">QRコードは、15分間・1回だけ使えます。期限が切れた場合は、もう一度、登録フォームからお進みください。</span></div>
       <p class="xs muted center">QRコードを読み取ると、スマートフォンに案内ページが開きます。</p>
-      <div class="stack" style="margin-top:14px"><button class="btn" id="copyBtn">案内のURLをコピー</button><button class="btn ghost" data-go="#/push">このまま続ける</button></div></div>`;
+      <div class="stack" style="margin-top:14px"><button class="btn" data-go="#/push">ご登録を進める</button><p class="xs muted center" style="margin:0">スマートフォンをお持ちでない場合は、パソコンのまま進めます。</p><p class="xs center" style="margin:8px 0 0"><a href="#" id="copyBtn" style="color:var(--muted);text-decoration:underline">スマートフォンに送るURLをコピー（15分有効）</a></p></div></div>`;
   }
   app.innerHTML = html;
   if (isIOS && !inApp && S.user) prepareInstallManifest();
-  const cb = $('#copyBtn'); if (cb) cb.addEventListener('click', copyUrl);
+  const cb = $('#copyBtn'); if (cb) cb.addEventListener('click', (e) => { e.preventDefault(); copyUrl(); });
   const ib = $('#installBtn'); if (ib) ib.addEventListener('click', async () => { if (S.deferred) { S.deferred.prompt(); const c = await S.deferred.userChoice.catch(() => ({})); S.deferred = null; location.hash = c.outcome === 'accepted' ? '#/ready' : '#/push'; } else toast('右上の「︙」メニューから「ホーム画面に追加」を選んでください'); });
   const qr = $('#qr');
   if (qr) {
     const sc = document.createElement('script');
     sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
-    sc.onload = async () => { let u = location.origin + location.pathname; try { const r = await call('mintHandoff')({ kind: 'qr' }); u += '?t=' + encodeURIComponent(r.data.token); } catch { /* 番号が作れない場合は、URLのみ */ } const q = window.qrcode(0, 'M'); q.addData(u); q.make(); qr.innerHTML = q.createSvgTag(5) + ''; };
+    sc.onload = async () => { let u = location.origin + location.pathname; try { const r = await call('mintHandoff')({ kind: 'qr' }); u += '?t=' + encodeURIComponent(r.data.token); } catch { /* 番号が作れない場合は、URLのみ */ } S.qrUrl = u; const q = window.qrcode(0, 'M'); q.addData(u); q.make(); qr.innerHTML = q.createSvgTag(5) + ''; };
     sc.onerror = () => { qr.textContent = location.origin + location.pathname; };
     document.head.appendChild(sc);
   }
@@ -624,7 +624,7 @@ async function boot() {
   const t = new URLSearchParams(location.search).get('t');
   if (t && u0 && isStandalone()) { history.replaceState(null, '', location.pathname + location.hash); } // ホーム画面アプリで、すでにログイン済み：開始URLの番号は使わない
   else if (t) {
-    app.innerHTML = '<div class="section center" style="padding-top:36vh"><p class="eyebrow">PRIME PASS</p><p class="h2">ご登録を確認しています…</p></div>';
+    app.innerHTML = '<div class="section center" style="padding-top:30vh"><p class="eyebrow">PRIME PASS</p><div class="pp-spin" aria-hidden="true"></div><p class="h2">ご登録を確認しています…</p><p class="xs muted" style="margin-top:10px">数秒かかります。画面を閉じずに、そのままお待ちください。</p></div>';
     try {
       const tmo = (p, label) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(label + 'が、20秒以内に終わりませんでした')), 20000))]);
       const r = await tmo(call('redeemToken')({ token: t }), '番号の確認');

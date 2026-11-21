@@ -330,3 +330,7 @@ table.t td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-
 .admin .grid4 { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
 .admin .seg button[disabled] { cursor: default; }
 @media (max-width: 700px) { .navtabs { display: none; } }
+
+/* 読み込み中の表示 */
+.pp-spin{width:34px;height:34px;margin:22px auto 16px;border:3px solid #d9cfbd;border-top-color:var(--gold,#a88b52);border-radius:50%;animation:ppspin .9s linear infinite}
+@keyframes ppspin{to{transform:rotate(360deg)}}
