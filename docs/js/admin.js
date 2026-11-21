@@ -122,7 +122,7 @@ async function viewEnroll(user) {
 /* ---------- データ取得（役割に応じて、許される範囲だけ） ---------- */
 async function fetchScoped(col) {
   const out = [];
-  if (['adex', 'qlea', 'escon'].includes(S.claims.role) && col !== 'inquiries' && col !== 'contacts' && col !== 'outbox' && col !== 'guides') {
+  if (['adex', 'qlea', 'escon'].includes(S.claims.role) && col !== 'inquiries' && col !== 'contacts' && col !== 'outbox' && col !== 'guides' && col !== 'contents') {
     (await getDocs(collection(db, col))).forEach((d) => out.push({ id: d.id, ...d.data() }));
     return out;
   }
@@ -143,6 +143,7 @@ async function loadAll() {
   d.contacts = can.contacts() ? await fetchScoped('contacts') : [];
   d.outbox = can.send() ? await fetchScoped('outbox') : [];
   d.guides = can.send() ? await fetchScoped('guides') : [];
+  d.contents = can.send() ? await fetchScoped('contents') : [];
   d.inquiries = can.inquiries() ? await fetchScoped('inquiries') : [];
   if (can.audit()) {
     d.audit = []; (await getDocs(collection(db, 'auditLogs'))).forEach((x) => d.audit.push({ id: x.id, ...x.data() }));
@@ -153,9 +154,9 @@ async function loadAll() {
 
 /* ---------- 画面 ---------- */
 const NAV = [['overview', 'ホーム', 'M4 11l8-7 8 7v9H4z'], ['members', '登録者', 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c1-4 4-6 8-6s7 2 8 6'], ['notices', '配信', 'M3 11l18-8-8 18-2-8z'], ['inquiries', '問い合わせ', 'M3 5h18v14H3zM3 7l9 7 9-7'], ['menu', 'メニュー', 'M4 6h16M4 12h16M4 18h16']];
-const MENU_TABS = ['reservations', 'events', 'properties', 'staff', 'admin'];
+const MENU_TABS = ['contents', 'reservations', 'events', 'properties', 'staff', 'admin'];
 const TAB_LABEL = { reservations: '来場予約', events: '行動ログ', properties: '物件の管理', staff: '担当者アカウント', admin: '操作記録' };
-const menuItems = () => [['reservations', '来場予約', '予約の日別一覧'], ['events', '行動ログ', '匿名IDでの行動の記録'], ...(can.manage() ? [['properties', '物件の管理', '登録・編集・掲載の停止'], ['staff', '担当者アカウント', '発行・担当物件の変更・停止'], ['admin', '操作記録', '誰がいつ何をしたか']] : [])];
+const menuItems = () => [...(can.send() ? [['contents', 'コンテンツ管理', '限定間取り・CG・ムービー']] : []), ['reservations', '来場予約', '予約の日別一覧'], ['events', '行動ログ', '匿名IDでの行動の記録'], ...(can.manage() ? [['properties', '物件の管理', '登録・編集・掲載の停止'], ['staff', '担当者アカウント', '発行・担当物件の変更・停止'], ['admin', '操作記録', '誰がいつ何をしたか']] : [])];
 
 function shell(inner) {
   const active = MENU_TABS.includes(S.tab) ? 'menu' : S.tab;
@@ -440,6 +441,90 @@ function bindGuide() {
   });
 }
 
+const SALE_JA = { on: '販売中', hold: '商談中', sold: '契約済', hidden: '期限切れ・非表示' };
+const CKIND = { plan: '限定間取り', gallery: 'CG・ムービー' };
+function contentChip(c) {
+  const now = Date.now();
+  if (c.status === 'pending') return '<span class="tag gold">承認待ち</span>';
+  if (c.status === 'draft') return '<span class="tag">下書き</span>';
+  if (c.sale === 'hidden' || (c.publishUntil && c.publishUntil.toMillis() < now)) return '<span class="tag red">非表示・期限切れ</span>';
+  if (c.publishFrom && c.publishFrom.toMillis() > now) return '<span class="tag" style="background:#e3edf8;color:#2f6db5">公開前</span>';
+  return '<span class="tag soft">公開中</span>';
+}
+function tabContents() {
+  const k = S.ckind || 'plan';
+  const rows = fd(S.data.contents || []).filter((c) => (c.kind || 'plan') === k).sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+  return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Content Library</h1>
+  <div class="seg" id="ck"><button data-v="plan" class="${k === 'plan' ? 'on' : ''}">限定間取り</button><button data-v="gallery" class="${k === 'gallery' ? 'on' : ''}">CG・ムービー</button></div>
+  <div>${rows.map((c) => `<div class="nrow" data-cid="${esc(c.id)}" style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;flex:none;background:#e1e0d3 center/cover no-repeat;${c.imageUrl ? `background-image:url('${esc(c.imageUrl)}')` : ''}"></div><div style="flex:1;min-width:0"><div class="t">${esc(c.title)}</div><div class="xs muted">${esc(c.spec || '')}${c.kind === 'plan' || !c.kind ? `　${SALE_JA[c.sale] || ''}` : ''}</div><div class="xs muted">${pn(c.property)}${c.publishFrom ? `　公開：${fmtDate(c.publishFrom)}〜` : ''}</div></div>${contentChip(c)}</div>`).join('') || '<div class="muted small">まだありません</div>'}</div>
+  <button class="btn" id="newContent" style="margin-top:14px">＋ 新しく追加する</button>`;
+}
+function bindContents() {
+  $$('#ck button').forEach((b) => b.addEventListener('click', () => { S.ckind = b.dataset.v; render(); }));
+  const nb = $('#newContent'); if (nb) nb.addEventListener('click', () => { S.detail = { type: 'content', kind: S.ckind || 'plan' }; render(); window.scrollTo(0, 0); });
+  $$('[data-cid]').forEach((r) => r.addEventListener('click', () => { const c = S.data.contents.find((x) => x.id === r.dataset.cid); S.detail = c.status === 'pending' ? { type: 'creview', id: c.id } : { type: 'content', id: c.id, kind: c.kind || 'plan' }; render(); window.scrollTo(0, 0); }));
+}
+const toLocalInput = (ts) => { const d = ts && ts.toDate ? ts.toDate() : null; return d ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''; };
+function detailContent() {
+  const c = S.detail.id ? S.data.contents.find((x) => x.id === S.detail.id) : null;
+  const kind = c ? c.kind || 'plan' : S.detail.kind || 'plan';
+  const prop = c ? c.property : (S.prop !== 'all' ? S.prop : scope()[0]);
+  const names = Object.fromEntries((S.data.staff || []).map((x) => [x.id, x.displayName]));
+  return `<button class="btn sm ghost" id="back">‹ コンテンツの一覧へ</button>
+  <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">${c ? 'Edit Content' : 'New Content'}</h1>
+  <div class="seg" style="margin-bottom:12px"><button class="on" disabled>${CKIND[kind]}</button></div>
+  ${c?.rejectNote ? `<div class="banner err">差し戻されました：${esc(c.rejectNote)}</div>` : ''}
+  <div class="field"><label>物件</label><select class="input" id="cp" ${c ? 'disabled' : ''}>${scope().map((p) => `<option value="${esc(p)}" ${p === prop ? 'selected' : ''}>${pn(p)}</option>`).join('')}</select></div>
+  <div class="field"><label>名称</label><input class="input" id="ct" maxlength="40" value="${esc(c?.title || '')}" placeholder="${kind === 'plan' ? '例：Cタイプ' : '例：外観・エントランス CG'}"></div>
+  ${kind === 'plan' ? `<div class="field"><label>面積・間取り</label><input class="input" id="cs" maxlength="40" value="${esc(c?.spec || '')}" placeholder="例：98.0㎡　4LDK"></div>
+  <div class="field"><label>販売状況</label><select class="input" id="csale">${Object.entries(SALE_JA).map(([v, l]) => `<option value="${v}" ${(c?.sale || 'on') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : ''}
+  <div class="field"><label>${kind === 'plan' ? '間取り図の画像' : '画像'}（JPEG・PNG・WebP。自動で縮小します）</label>
+    <div style="display:flex;gap:12px;align-items:center"><div id="cprev" style="width:112px;height:72px;flex:none;background:#e1e0d3 center/cover no-repeat;${c?.imageUrl ? `background-image:url('${esc(c.imageUrl)}')` : ''}"></div><div><input type="file" id="cimg" accept="image/jpeg,image/png,image/webp" style="font-size:12px;max-width:200px">${c?.imageUrl ? '<br><button class="btn sm ghost" type="button" id="cimgdel" style="margin-top:8px">画像を外す</button>' : ''}</div></div></div>
+  <div class="grid4" style="grid-template-columns:1fr 1fr"><div class="field"><label>公開開始</label><input class="input" type="datetime-local" id="cfrom" value="${toLocalInput(c?.publishFrom)}"></div><div class="field"><label>公開終了（任意）</label><input class="input" type="datetime-local" id="cuntil" value="${toLocalInput(c?.publishUntil)}"></div></div>
+  <label class="small" style="display:flex;gap:10px;margin:6px 0"><input type="checkbox" id="cauto" ${c?.autoDate === false ? '' : 'checked'}><span>「○年○月○日時点」を自動表示<br><span class="xs muted">更新日が、自動で入ります</span></span></label>
+  <label class="small" style="display:flex;gap:10px;margin:6px 0 14px"><input type="checkbox" id="cfix" ${c?.fixNote === false ? '' : 'checked'}><span>注意書きを固定表示<br><span class="xs muted">間取り図・価格などの注意書きを、常に表示します</span></span></label>
+  <div id="capNote" class="banner warn hidden"></div>
+  ${c?.history?.length ? `<h2 class="h2">更新履歴</h2><div class="list">${c.history.slice().reverse().slice(0, 6).map((h) => `<div class="list-item" style="cursor:default"><div><div class="t" style="font-size:13px">${esc(h.action)}</div><div class="d">${esc(names[h.by] || (h.by ? String(h.by).slice(0, 6) : ''))}　${fmtDT({ toDate: () => new Date(h.at) })}</div></div></div>`).join('')}</div>` : ''}
+  <div style="display:flex;gap:10px;margin-top:16px"><button class="btn ghost" id="csd" style="flex:1">下書き保存</button><button class="btn" id="csp" style="flex:2">公開する</button></div>
+  ${c ? '<button class="btn ghost" id="cdel" style="margin-top:10px;color:var(--danger);border-color:var(--danger)">このコンテンツを削除</button>' : ''}<div id="cres" style="margin-top:12px"></div>`;
+}
+function bindContent() {
+  const c = S.detail.id ? S.data.contents.find((x) => x.id === S.detail.id) : null;
+  const kind = c ? c.kind || 'plan' : S.detail.kind || 'plan';
+  let img = null; let removeImage = false;
+  const sync = () => { const ap = approvalOf($('#cp').value); $('#csp').textContent = ap ? '承認を依頼' : '公開する'; const n = $('#capNote'); n.classList.toggle('hidden', !ap); n.textContent = ap ? 'この物件のコンテンツは、公開前に、責任者（ADEX）の承認が必要です。' : ''; };
+  $('#cp').addEventListener('change', sync); sync();
+  $('#cimg').addEventListener('change', async (e) => { const f = e.target.files[0]; if (!f) return; try { img = await resizeImage(f); removeImage = false; $('#cprev').style.backgroundImage = `url('${img.preview}')`; } catch { $('#cres').innerHTML = '<div class="banner err">画像を読み込めませんでした</div>'; } });
+  const del = $('#cimgdel'); if (del) del.addEventListener('click', () => { removeImage = true; img = null; $('#cprev').style.backgroundImage = 'none'; del.remove(); });
+  const run = (action) => async (e) => {
+    e.target.disabled = true; $('#cres').innerHTML = '';
+    const ms = (id) => ($(id).value ? new Date($(id).value).getTime() : null);
+    try {
+      const r = await call('saveContent')({ id: c?.id, property: $('#cp').value, kind, title: $('#ct').value, spec: $('#cs') ? $('#cs').value : '', sale: $('#csale') ? $('#csale').value : 'on', publishFrom: ms('#cfrom'), publishUntil: ms('#cuntil'), autoDate: $('#cauto').checked, fixNote: $('#cfix').checked, image: img ? { data: img.data, contentType: img.contentType } : undefined, removeImage, action });
+      await loadAll(); S.detail = null; S.ckind = kind; render();
+      $('#main').insertAdjacentHTML('afterbegin', `<div class="banner ok">${{ draft: '下書きを保存しました', pending: '承認を依頼しました。ADEXの承認後に、公開されます', published: '公開しました' }[r.data.status]}</div>`);
+    } catch (err) { $('#cres').innerHTML = `<div class="banner err">${esc(err.message)}</div>`; e.target.disabled = false; }
+  };
+  $('#csd').addEventListener('click', run('draft')); $('#csp').addEventListener('click', run('submit'));
+  const dl = $('#cdel'); if (dl) dl.addEventListener('click', async () => { if (!window.confirm('このコンテンツを削除します。元に戻せません。よろしいですか？')) return; try { await call('deleteContent')({ id: c.id }); await loadAll(); S.detail = null; render(); } catch (err) { $('#cres').innerHTML = `<div class="banner err">${esc(err.message)}</div>`; } });
+}
+function detailContentReview() {
+  const c = S.data.contents.find((x) => x.id === S.detail.id); if (!c) { S.detail = null; return tabContents(); }
+  const by = (S.data.staff || []).find((x) => x.id === c.createdBy);
+  return `<button class="btn sm ghost" id="back">‹ コンテンツの一覧へ</button>
+  <p class="eyebrow" style="margin-top:16px">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:14px">Review &amp; Approval</h1>
+  <div class="warnbanner"><span style="flex:none">⚠</span><div><b>公開前に、内容をご確認ください</b><br>間取り・面積・販売状況が、最新の情報と合っているか、確認してから、承認してください。</div></div>
+  <div class="card" style="margin-top:16px"><div style="height:120px;background:#e1e0d3 center/cover no-repeat;${c.imageUrl ? `background-image:url('${esc(c.imageUrl)}')` : ''};margin-bottom:10px"></div><div style="font-weight:500">${esc(c.title)}</div><div class="xs muted">${esc(c.spec || '')}${c.kind !== 'gallery' ? `　${SALE_JA[c.sale] || ''}` : ''}</div></div>
+  <div class="kv"><span>物件</span><span>${pn(c.property)}</span></div><div class="kv"><span>公開開始</span><span>${c.publishFrom ? fmtDT(c.publishFrom) : '承認後、すぐ'}</span></div>
+  <div style="display:flex;gap:8px;align-items:center;font-size:12px;margin-top:12px"><span class="tag">作成：${esc(by ? by.displayName : '担当者')}</span>›<span class="tag gold">承認：ADEX（承認待ち）</span></div>
+  ${S.claims.role === 'adex' ? `<div class="field" style="margin-top:16px"><label>差し戻すときの理由（任意）</label><input class="input" id="crn" maxlength="200"></div><div style="display:flex;gap:10px"><button class="btn ghost" id="crj" style="flex:1">差し戻す</button><button class="btn" id="cra" style="flex:2">承認して公開する</button></div>` : '<div class="banner" style="margin-top:16px">承認できるのは、ADEXだけです。</div>'}<div id="crr" style="margin-top:12px"></div>`;
+}
+function bindContentReview() {
+  const go = async (fn, msg) => { try { await fn(); await loadAll(); S.detail = null; render(); $('#main').insertAdjacentHTML('afterbegin', `<div class="banner ok">${msg}</div>`); } catch (e) { $('#crr').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; } };
+  const a = $('#cra'); if (a) a.addEventListener('click', () => go(() => call('reviewContent')({ id: S.detail.id, decision: 'approve' }), '承認して、公開しました'));
+  const r = $('#crj'); if (r) r.addEventListener('click', () => { if (window.confirm('差し戻します。よろしいですか？')) go(() => call('reviewContent')({ id: S.detail.id, decision: 'reject', note: $('#crn').value }), '差し戻しました'); });
+}
+
 function tabEvents() {
   const rows = fd(S.data.events).slice().sort((a, b) => (b.ts?.toMillis?.() || 0) - (a.ts?.toMillis?.() || 0)).slice(0, 60);
   const lab = { open: 'アプリを開いた', notice_open: 'お知らせを開いた', checkin: 'チェックイン（ホーム画面から起動）' };
@@ -448,7 +533,7 @@ function tabEvents() {
   ${rows.map((e) => `<tr><td>${fmtDate(e.ts)}</td><td class="mono">${esc(e.anonId)}</td><td>${pn(e.property)}</td><td>${esc(lab[e.type] || e.type)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">まだありません</td></tr>'}</tbody></table></div>`;
 }
 
-const AUDIT_JA = { sendNotice: ['通知を配信', '配信', '#2e7d5b'], sendNotice_denied: ['通知の配信を拒否', '権限', '#b3402f'], intake: ['登録フォームから登録', '登録', '#2f6db5'], property_create: ['物件を登録', '物件', '#997544'], property_update: ['物件を更新', '物件', '#997544'], property_archive: ['物件の掲載を停止', '物件', '#b3402f'], property_restore: ['物件の掲載を再開', '物件', '#2e7d5b'], staff_create: ['担当者を発行', '権限', '#b3402f'], staff_update: ['担当物件を変更', '権限', '#b3402f'], staff_disable: ['担当者を停止', '権限', '#b3402f'], staff_enable: ['担当者を再開', '権限', '#2e7d5b'], inquiry_status: ['問い合わせの状況を変更', '対応', '#2f6db5'], notice_submit: ['通知の承認を依頼', '承認', '#997544'], notice_approve: ['通知を承認', '承認', '#2e7d5b'], notice_reject: ['通知を差し戻し', '承認', '#b3402f'], notice_schedule: ['通知を予約', '配信', '#2f6db5'], notice_withdraw: ['通知を取り下げ', '承認', '#7d7b6e'], staff_mfa_reset: ['二段階認証をリセット', '権限', '#b3402f'], guide_send: ['ご案内を送信', '個別', '#2f6db5'], sendGuide_denied: ['ご案内の送信を拒否', '権限', '#b3402f'], property_image_set: ['物件の画像を登録', '物件', '#997544'], property_image_remove: ['物件の画像を外す', '物件', '#997544'], saveNotice_denied: ['通知の作成を拒否', '権限', '#b3402f'] };
+const AUDIT_JA = { sendNotice: ['通知を配信', '配信', '#2e7d5b'], sendNotice_denied: ['通知の配信を拒否', '権限', '#b3402f'], intake: ['登録フォームから登録', '登録', '#2f6db5'], property_create: ['物件を登録', '物件', '#997544'], property_update: ['物件を更新', '物件', '#997544'], property_archive: ['物件の掲載を停止', '物件', '#b3402f'], property_restore: ['物件の掲載を再開', '物件', '#2e7d5b'], staff_create: ['担当者を発行', '権限', '#b3402f'], staff_update: ['担当物件を変更', '権限', '#b3402f'], staff_disable: ['担当者を停止', '権限', '#b3402f'], staff_enable: ['担当者を再開', '権限', '#2e7d5b'], inquiry_status: ['問い合わせの状況を変更', '対応', '#2f6db5'], notice_submit: ['通知の承認を依頼', '承認', '#997544'], notice_approve: ['通知を承認', '承認', '#2e7d5b'], notice_reject: ['通知を差し戻し', '承認', '#b3402f'], notice_schedule: ['通知を予約', '配信', '#2f6db5'], notice_withdraw: ['通知を取り下げ', '承認', '#7d7b6e'], staff_mfa_reset: ['二段階認証をリセット', '権限', '#b3402f'], content_publish: ['コンテンツを公開', 'コンテンツ', '#2e7d5b'], content_submit: ['コンテンツの承認を依頼', '承認', '#997544'], content_draft: ['コンテンツを下書き保存', 'コンテンツ', '#7d7b6e'], content_approve: ['コンテンツを承認', '承認', '#2e7d5b'], content_reject: ['コンテンツを差し戻し', '承認', '#b3402f'], content_delete: ['コンテンツを削除', 'コンテンツ', '#b3402f'], saveContent_denied: ['コンテンツの編集を拒否', '権限', '#b3402f'], guide_send: ['ご案内を送信', '個別', '#2f6db5'], sendGuide_denied: ['ご案内の送信を拒否', '権限', '#b3402f'], property_image_set: ['物件の画像を登録', '物件', '#997544'], property_image_remove: ['物件の画像を外す', '物件', '#997544'], saveNotice_denied: ['通知の作成を拒否', '権限', '#b3402f'] };
 function tabAdmin() {
   const d = S.data;
   return `<p class="eyebrow">Membership management</p><h1 class="display" style="font-size:32px;margin-bottom:12px">Audit Trail</h1>
@@ -584,8 +669,8 @@ function bindStaff() {
 }
 
 function render(full = true) {
-  const views = { overview: tabOverview, members: tabMembers, notices: tabNotices, inquiries: tabInquiries, reservations: tabReservations, events: tabEvents, admin: tabAdmin, properties: tabProperties, staff: tabStaff, menu: tabMenu };
-  const dv = { member: detailMember, inq: detailInquiry, compose: detailCompose, review: detailReview, guide: detailGuide, property: detailProperty, newstaff: detailStaff };
+  const views = { contents: tabContents, overview: tabOverview, members: tabMembers, notices: tabNotices, inquiries: tabInquiries, reservations: tabReservations, events: tabEvents, admin: tabAdmin, properties: tabProperties, staff: tabStaff, menu: tabMenu };
+  const dv = { member: detailMember, inq: detailInquiry, compose: detailCompose, review: detailReview, guide: detailGuide, content: detailContent, creview: detailContentReview, property: detailProperty, newstaff: detailStaff };
   const inner = S.detail ? dv[S.detail.type]() : views[S.tab]();
   shell(inner);
   const back = $('#back'); if (back) back.addEventListener('click', () => { S.detail = null; render(); });
@@ -596,11 +681,14 @@ function render(full = true) {
     if (S.detail.type === 'compose') bindCompose();
     if (S.detail.type === 'review') bindReview();
     if (S.detail.type === 'guide') bindGuide();
+    if (S.detail.type === 'content') bindContent();
+    if (S.detail.type === 'creview') bindContentReview();
     if (S.detail.type === 'member') { const gb = $('#guideBtn'); if (gb) gb.addEventListener('click', () => { S.detail = { type: 'guide', mid: S.detail.id }; render(); window.scrollTo(0, 0); }); }
     if (S.detail.type === 'property') bindProperties();
     if (S.detail.type === 'newstaff') bindStaff();
     return;
   }
+  if (S.tab === 'contents') bindContents();
   if (S.tab === 'members') bindMembers();
   if (S.tab === 'inquiries') bindInquiries();
   if (S.tab === 'notices') bindNotices();

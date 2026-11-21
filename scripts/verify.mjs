@@ -115,6 +115,30 @@ if (rd1.result) {
   gchk('お客様が、既読にする→成功', !!(await callJ(mtok, 'markGuideRead', { id: gid })).result);
   gchk('　既読の時刻が記録される', (await qdocs(mtok, 'guides', 'cid', gcid)).some((d) => d.fields.readAt && d.fields.readAt.timestampValue));
   gchk('お客様が、ご案内を送ろうとする→拒否', !!(await gj(mtok, { cid: gcid, property: 'meguro62', kind: 'message', title: 'x', message: 'x' })).error);
+
+  // ---- コンテンツ管理（限定間取り・CG） ----
+  console.log('\n■ コンテンツ管理');
+  const cj = async (tok, name, data) => callJ(tok, name, data);
+  const T = `[自動テスト] 間取り ${Date.now()}`;
+  gchk('担当外の担当者（葉山）が、目黒のコンテンツを作る→拒否', !!(await cj(sT, 'saveContent', { property: 'meguro62', kind: 'plan', title: T, action: 'draft' })).error);
+  const c1 = await cj(sT2, 'saveContent', { property: 'meguro62', kind: 'plan', title: T, spec: '98.0㎡ 4LDK', sale: 'on', action: 'submit', image: { data: PNG, contentType: 'image/png' } });
+  gchk('承認が必要な物件で、担当者が公開しようとする→「承認待ち」', c1.result && c1.result.status === 'pending');
+  gchk('承認待ちの間は、お客様に見えない', (await qdocs(mtok, 'contents', 'property', 'meguro62')).length === 0);
+  gchk('担当者が、自分で承認しようとする→拒否', !!(await cj(sT2, 'reviewContent', { id: c1.result?.id, decision: 'approve' })).error);
+  gchk('ADEXが、差し戻す→下書きに戻る', (await cj(aT, 'reviewContent', { id: c1.result?.id, decision: 'reject', note: '面積を確認' })).result?.status === 'draft');
+  const c1b = await cj(sT2, 'saveContent', { id: c1.result?.id, property: 'meguro62', kind: 'plan', title: T, spec: '98.0㎡ 4LDK', sale: 'on', action: 'submit' });
+  gchk('直して、もう一度依頼する→承認待ち', c1b.result?.status === 'pending');
+  gchk('ADEXが、承認する→公開される', (await cj(aT, 'reviewContent', { id: c1.result?.id, decision: 'approve' })).result?.status === 'published');
+  const seen1 = await qdocs(mtok, 'contents', 'property', 'meguro62');
+  gchk('お客様が、公開中のコンテンツを読める', seen1.length === 0 ? false : true);
+  const imgU = seen1[0] && seen1[0].fields.imageUrl && seen1[0].fields.imageUrl.stringValue;
+  if (imgU) gchk('　間取り図の画像を、取得できる', (await fetch(imgU)).status === 200);
+  gchk('お客様が、公開中でないものを含む検索→拒否', await (async () => { const r = await fetch(`https://firestore.googleapis.com/v1/projects/${P}/databases/(default)/documents:runQuery`, { method: 'POST', headers: { Authorization: `Bearer ${mtok}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'contents' }], where: { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'draft' } } } } }) }); return !r.ok; })());
+  gchk('お客様が、コンテンツを作ろうとする→拒否', !!(await cj(mtok, 'saveContent', { property: 'meguro62', kind: 'plan', title: 'x' })).error);
+  gchk('他の担当者（葉山）が、目黒のコンテンツを削除→拒否', !!(await cj(sT, 'deleteContent', { id: c1.result?.id })).error);
+  gchk('作成者（目黒）が、削除する→成功', !!(await cj(sT2, 'deleteContent', { id: c1.result?.id })).result);
+  gchk('削除したコンテンツは、お客様に見えなくなる', (await qdocs(mtok, 'contents', 'property', 'meguro62')).length === 0);
+  gchk('公開終了が開始より前→拒否', !!(await cj(sT2, 'saveContent', { property: 'meguro62', kind: 'plan', title: '[自動テスト] 期間', action: 'draft', publishFrom: Date.now() + 86400000, publishUntil: Date.now() })).error);
 }
 console.log('\n■ ADEX専用の管理機能（物件・担当者）');
 const chk = (label, ok) => { console.log(`${label}: ${ok ? '期待どおり' : 'NG'}`); if (!ok) bad++; };
@@ -220,6 +244,7 @@ try {
     const gsd = await run('guides', 'cid', 'EQUAL', cid);
     for (const g of gsd) { if (g.fields.filePath) await fetch(`https://storage.googleapis.com/storage/v1/b/smipocket-stg.firebasestorage.app/o/${encodeURIComponent(g.fields.filePath.stringValue)}`, { method: 'DELETE', headers: H }); }
     n += await del(gsd);
+    n += await del(await run('contents', 'property', 'EQUAL', 'meguro62').then((l) => l.filter((d) => d.fields.title && d.fields.title.stringValue.startsWith('[自動テスト]'))));
     n += await del(ms); n += await del(await run('inquiries', 'cid', 'EQUAL', cid)); n += await del(await run('contacts', 'cid', 'EQUAL', cid));
     n += await del(await run('intakeIndex', 'cid', 'EQUAL', cid));
   }

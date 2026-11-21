@@ -57,6 +57,14 @@ service cloud.firestore {
                   || isStaffOf(resource.data.property);
     }
 
+    // コンテンツ（限定間取り・CG／ムービー）。担当者は編集のため、会員は「公開中」だけ（自分が登録した物件のもの）
+    match /contents/{id} {
+      allow read: if isRole('adex')
+                  || isStaffOf(resource.data.property)
+                  || (isRole('member') && resource.data.status == 'published'
+                      && exists(/databases/$(database)/documents/memberships/$(request.auth.uid + '_' + resource.data.property)));
+    }
+
     // 担当者からのご案内（お客様ごと）。本人と、ADEXと、自物件の担当者だけ（QLEA・本社は不可）
     match /guides/{id} {
       allow read: if isRole('adex')

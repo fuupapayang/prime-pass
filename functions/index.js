@@ -568,3 +568,92 @@ exports.adminResetMfa = onCall(async (req) => {
   await audit(a.uid, 'staff_mfa_reset', { uid });
   return { ok: true };
 });
+
+/* ---------- 13. コンテンツ管理（限定間取り・CG／ムービー） ---------- */
+const SALES = ['on', 'hold', 'sold', 'hidden']; // 販売中／商談中／契約済／期限切れ・非表示
+async function contentImage(bucket, id, img, oldPath) {
+  const ext = IMG_TYPES[img.contentType];
+  if (!ext) throw new HttpsError('invalid-argument', '画像は、JPEG・PNG・WebPのいずれかにしてください');
+  const buf = Buffer.from(String(img.data || ''), 'base64');
+  if (!buf.length || buf.length > 3 * 1024 * 1024) throw new HttpsError('invalid-argument', '画像は、3MB以下にしてください');
+  const path = `site/content/${id}-${Date.now()}.${ext}`;
+  const token = crypto.randomUUID();
+  await bucket.file(path).save(buf, { contentType: img.contentType, metadata: { cacheControl: 'private, max-age=3600', metadata: { firebaseStorageDownloadTokens: token } } });
+  if (oldPath) await bucket.file(oldPath).delete().catch(() => {});
+  return { imagePath: path, imageUrl: `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${token}` };
+}
+const histItem = (actor, action) => ({ at: Date.now(), by: actor, action });
+
+exports.saveContent = onCall({ memory: '512MiB' }, async (req) => {
+  const auth = requireAuth(req);
+  const role = auth.token.role;
+  const d = req.data || {};
+  const property = clean(d.property, 20);
+  if (!['adex', 'staff'].includes(role) || !canSendTo(auth, property)) {
+    await audit(auth.uid, 'saveContent_denied', { role, property });
+    throw new HttpsError('permission-denied', 'この物件のコンテンツは、編集できません');
+  }
+  if (!(await activeProps()).includes(property)) throw new HttpsError('invalid-argument', '物件が見つかりません');
+  const kind = d.kind === 'gallery' ? 'gallery' : 'plan';
+  const title = clean(d.title, 40);
+  if (!title) throw new HttpsError('invalid-argument', '名称が必要です');
+  const from = d.publishFrom ? Number(d.publishFrom) : null;
+  const until = d.publishUntil ? Number(d.publishUntil) : null;
+  if (from && until && until <= from) throw new HttpsError('invalid-argument', '公開終了は、公開開始より後にしてください');
+  const sale = SALES.includes(d.sale) ? d.sale : 'on';
+  const action = d.action === 'draft' ? 'draft' : 'submit';
+  const bucket = admin.storage().bucket(BUCKET);
+  let ref; let cur = null;
+  if (d.id) {
+    ref = db.collection('contents').doc(clean(d.id, 60));
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpsError('not-found', 'コンテンツが見つかりません');
+    cur = snap.data();
+    if (cur.property !== property) throw new HttpsError('invalid-argument', '物件は、変更できません');
+    if (cur.createdBy !== auth.uid && role !== 'adex') throw new HttpsError('permission-denied', '他の方が作成したものは、編集できません');
+  } else ref = db.collection('contents').doc();
+  const data = {
+    property, kind, title, spec: clean(d.spec, 40), sale,
+    publishFrom: from ? Timestamp.fromMillis(from) : null, publishUntil: until ? Timestamp.fromMillis(until) : null,
+    autoDate: d.autoDate !== false, fixNote: d.fixNote !== false, updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (!cur) { data.createdBy = auth.uid; data.createdByRole = role; data.createdAt = FieldValue.serverTimestamp(); }
+  if (d.image && d.image.data) Object.assign(data, await contentImage(bucket, ref.id, d.image, cur && cur.imagePath));
+  if (d.removeImage && cur && cur.imagePath) { await bucket.file(cur.imagePath).delete().catch(() => {}); data.imageUrl = ''; data.imagePath = ''; }
+  let status = 'draft';
+  if (action === 'submit') status = (await needsApproval(property, role)) ? 'pending' : 'published';
+  data.status = status;
+  data.rejectNote = '';
+  data.history = FieldValue.arrayUnion(histItem(auth.uid, status === 'draft' ? '下書きを保存' : status === 'pending' ? '承認を依頼' : '公開'));
+  await ref.set(data, { merge: true });
+  await audit(auth.uid, status === 'published' ? 'content_publish' : status === 'pending' ? 'content_submit' : 'content_draft', { role, property, id: ref.id, kind });
+  return { id: ref.id, status };
+});
+
+exports.reviewContent = onCall(async (req) => {
+  const auth = requireRole(req, ['adex']);
+  const ref = db.collection('contents').doc(clean(req.data && req.data.id, 60));
+  const snap = await ref.get();
+  if (!snap.exists || snap.data().status !== 'pending') throw new HttpsError('failed-precondition', '承認待ちのコンテンツではありません');
+  const ok = !(req.data && req.data.decision === 'reject');
+  await ref.update({
+    status: ok ? 'published' : 'draft', rejectNote: ok ? '' : clean(req.data.note, 200), updatedAt: FieldValue.serverTimestamp(),
+    history: FieldValue.arrayUnion(histItem(auth.uid, ok ? '承認して公開' : '差し戻し')),
+  });
+  await audit(auth.uid, ok ? 'content_approve' : 'content_reject', { id: ref.id, property: snap.data().property });
+  return { status: ok ? 'published' : 'draft' };
+});
+
+exports.deleteContent = onCall(async (req) => {
+  const auth = requireAuth(req);
+  const ref = db.collection('contents').doc(clean(req.data && req.data.id, 60));
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'コンテンツが見つかりません');
+  const c = snap.data();
+  const ok = auth.token.role === 'adex' || (auth.token.role === 'staff' && canSendTo(auth, c.property) && c.createdBy === auth.uid);
+  if (!ok) throw new HttpsError('permission-denied', 'このコンテンツは、削除できません');
+  if (c.imagePath) await admin.storage().bucket(BUCKET).file(c.imagePath).delete().catch(() => {});
+  await ref.delete();
+  await audit(auth.uid, 'content_delete', { id: ref.id, property: c.property });
+  return { ok: true };
+});

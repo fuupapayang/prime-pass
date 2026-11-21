@@ -7,12 +7,14 @@ import { assetKey, ENV_LABEL } from './config.js';
 
 const app = $('#app');
 const tabbar = $('#tabbar');
-const S = { user: null, name: '', contact: null, memberships: [], notices: [], guides: [], properties: [], assets: {}, selected: new Set(), tab: 'new', loaded: false, curProp: null, noticeFilter: 'all', last: null, deferred: null };
+const S = { user: null, name: '', contact: null, memberships: [], notices: [], guides: [], contents: [], properties: [], assets: {}, selected: new Set(), tab: 'new', loaded: false, curProp: null, noticeFilter: 'all', last: null, deferred: null };
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); S.deferred = e; });
 const seenKey = 'pp.seenNotices';
 const seen = () => { try { return new Set(JSON.parse(localStorage.getItem(seenKey) || '[]')); } catch { return new Set(); } };
 const markSeen = (ids) => { const s = seen(); ids.forEach((i) => s.add(i)); localStorage.setItem(seenKey, JSON.stringify([...s])); };
 const A = (k) => S.assets[k] || '';
+const liveContents = (id, kind) => { const now = Date.now(); return S.contents.filter((c) => c.property === id && (c.kind || 'plan') === kind && c.sale !== 'hidden' && (!c.publishFrom || c.publishFrom.toMillis() <= now) && (!c.publishUntil || c.publishUntil.toMillis() > now)).sort((a, b) => (a.title || '').localeCompare(b.title || '')); };
+const SALE_C = { on: ['販売中', 'ok'], hold: ['商談中', 'hold'], sold: ['契約済', 'done'] };
 const pimg = (idOrP) => { const p = typeof idOrP === 'string' ? S.properties.find((x) => x.id === idOrP) : idOrP; return (p && p.imageUrl) || A(assetKey(p ? p.id : idOrP)); };
 const bgp = (idOrP) => (pimg(idOrP) ? `style="background-image:url('${esc(pimg(idOrP))}')"` : '');
 const bg = (k) => (A(k) ? `style="background-image:url('${esc(A(k))}')"` : '');
@@ -116,6 +118,7 @@ async function loadData() {
   S.assets = {};
   if (as && as.exists()) Object.assign(S.assets, as.data().urls || {});
   try { const gs = await getDocs(query(collection(db, 'guides'), where('cid', '==', uid))); S.guides = gs.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)); } catch { S.guides = []; }
+  try { const cl = await Promise.all(S.memberships.map((m) => getDocs(query(collection(db, 'contents'), where('property', '==', m.property), where('status', '==', 'published'))))); S.contents = cl.flatMap((l) => l.docs.map((d) => ({ id: d.id, ...d.data() }))); } catch { S.contents = []; }
   const lists = await Promise.all(S.memberships.map((m) => getDocs(query(collection(db, 'notices'), where('property', '==', m.property)))));
   S.notices = lists.flatMap((l) => l.docs.map((d) => ({ id: d.id, ...d.data() })))
     .sort((a, b) => (b.publishedAt?.toMillis?.() || 0) - (a.publishedAt?.toMillis?.() || 0));
@@ -305,17 +308,21 @@ function viewProperty(id, sub) {
   const imgUrl = pimg(id);
   let body;
   if (sub === 'plans') {
+    const live = liveContents(id, 'plan');
+    const d0 = live.length ? (live.map((c) => c.updatedAt?.toMillis?.() || 0).sort().pop()) : Date.now(); const dd = new Date(d0 || Date.now());
+    const real = live.length > 0; const autoOn = !real || live.some((c) => c.autoDate !== false); const fixOn = !real || live.some((c) => c.fixNote !== false);
+    const items = real ? live.map((c) => [c.title, c.spec || '', (SALE_C[c.sale] || SALE_C.on)[0], (SALE_C[c.sale] || SALE_C.on)[1], c.imageUrl || '']) : [['Aタイプ', '72.5㎡　3LDK', '販売中', 'ok', ''], ['Bタイプ', '85.2㎡　3LDK+S', '商談中', 'hold', ''], ['Cタイプ', '98.0㎡　4LDK', '契約済', 'done', '']];
     body = `<p class="eyebrow">Members exclusive</p><h1 class="display">Plans for Living</h1>
-      <div class="note-info" style="margin-top:14px">販売状況は、${new Date().getFullYear()}年${new Date().getMonth() + 1}月${new Date().getDate()}日時点の情報です（公式サイトに準じて自動更新）。</div>
-      ${[['Aタイプ', '72.5㎡　3LDK', '販売中', 'ok'], ['Bタイプ', '85.2㎡　3LDK+S', '商談中', 'hold'], ['Cタイプ', '98.0㎡　4LDK', '契約済', 'done']].map(([n, sp, st, c]) => `<div class="plan"><div class="ph">${ICON.image}</div><div class="row"><div><div class="nm">${n}</div><div class="sp">${sp}</div></div><div class="st ${c}">${st}</div></div></div>`).join('')}
-      <div class="note-box">間取り図は、計画段階のものです。家具・設備は、販売価格に含まれない場合があります。<br>※この画面の間取り・販売状況は、サンプル表示です。</div>`;
+      ${autoOn ? `<div class="note-info" style="margin-top:14px">販売状況は、${dd.getFullYear()}年${dd.getMonth() + 1}月${dd.getDate()}日時点の情報です（公式サイトに準じて自動更新）。</div>` : ''}
+      ${items.map(([n, sp, st, c, im]) => `<div class="plan"><div class="ph" style="${im ? `background:#e1e0d3 url('${esc(im)}') center/cover no-repeat;height:140px` : ''}">${im ? '' : ICON.image}</div><div class="row"><div><div class="nm">${esc(n)}</div><div class="sp">${esc(sp)}</div></div><div class="st ${c}">${st}</div></div></div>`).join('')}
+      ${fixOn ? `<div class="note-box">間取り図は、計画段階のものです。家具・設備は、販売価格に含まれない場合があります。${real ? '' : '<br>※この画面の間取り・販売状況は、サンプル表示です。'}</div>` : ''}`;
   } else if (sub === 'gallery') {
     body = `<p class="eyebrow">Members exclusive</p><h1 class="display">A Closer Look</h1>
       <div style="position:relative;margin-top:16px;height:210px;background:#cfc8b8 center/cover no-repeat;${imgUrl ? `background-image:url('${esc(imgUrl)}')` : ''}"><div class="playbtn"><span>${ICON.play}</span></div></div>
       <div class="xs" style="margin:8px 0 18px">プロモーションムービー（約2分）</div>
       <h2 class="h2s" style="font-size:15px;margin-bottom:10px">外観・エントランス CG</h2>
-      <div class="gal">${[...GALLERY.map((g) => `<div class="im" ${bg(g.k)}></div>`), `<div class="im" ${bgp(id)}></div>`].join('')}</div>
-      <div class="note-box">掲載のCG・映像は、計画段階の図面等に基づいて描いたもので、実際とは異なります。<br>※この画面の画像・映像は、サンプル表示です。</div>`;
+      <div class="gal">${liveContents(id, 'gallery').length ? liveContents(id, 'gallery').map((c) => `<div><div class="im" style="background-image:url('${esc(c.imageUrl || '')}')"></div><div class="cap">${esc(c.title)}</div></div>`).join('') : [...GALLERY.map((g) => `<div class="im" ${bg(g.k)}></div>`), `<div class="im" ${bgp(id)}></div>`].join('')}</div>
+      <div class="note-box">掲載のCG・映像は、計画段階の図面等に基づいて描いたもので、実際とは異なります。${liveContents(id, 'gallery').length ? '' : '<br>※この画面の画像・映像は、サンプル表示です。'}</div>`;
   } else {
     body = `<p class="eyebrow">Members exclusive</p><h1 class="display">Private Residence</h1>
       <div class="frame-hero" style="margin:16px 0 0;height:300px;${imgUrl ? `background-image:url('${esc(imgUrl)}')` : ''}"><div class="k">会員限定</div><div class="name" style="font-size:20px">${esc(mine[0] ? mine[0].title : p.name)}</div><div class="sub">${mine[0] ? fmtDate(mine[0].publishedAt) + ' 時点' : ''}</div></div>
